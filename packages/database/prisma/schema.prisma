@@ -7,4 +7,425 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Domain models will be added through reviewed Prisma migrations.
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum DocumentPublicationState {
+  PRIVATE
+  PUBLISHED
+}
+
+enum DocumentAccessMode {
+  VIEW
+  EDIT
+}
+
+enum NotificationType {
+  WORKSPACE_INVITATION
+  DOCUMENT_SHARED
+  COMMENT_REPLY
+  MENTION
+  COMMENT_RESOLVED
+}
+
+enum AttachmentStatus {
+  PENDING
+  READY
+  DELETED
+}
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum BillingEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(320)
+  passwordHash String    @db.VarChar(255)
+  displayName  String?   @db.VarChar(120)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshSessions       RefreshSession[]
+  ownedWorkspaces       Workspace[]           @relation("WorkspaceOwner")
+  workspaceMemberships  WorkspaceMember[]     @relation("WorkspaceMemberUser")
+  membershipsAdded      WorkspaceMember[]     @relation("WorkspaceMemberAddedBy")
+  invitationsSent       WorkspaceInvitation[] @relation("InvitationInviter")
+  invitationsAccepted   WorkspaceInvitation[] @relation("InvitationAcceptor")
+  documentsCreated      Document[]            @relation("DocumentCreator")
+  documentsUpdated      Document[]            @relation("DocumentUpdater")
+  documentGrants        DocumentAccessGrant[] @relation("DocumentGrantUser")
+  documentGrantsCreated DocumentAccessGrant[] @relation("DocumentGrantCreator")
+  shareLinksCreated     DocumentShareLink[]   @relation("ShareLinkCreator")
+  crdtUpdatesAuthored   YjsUpdate[]
+  versionsAuthored      DocumentVersion[]     @relation("DocumentVersionAuthor")
+  commentsAuthored      Comment[]             @relation("CommentAuthor")
+  commentsResolved      Comment[]             @relation("CommentResolver")
+  notifications         Notification[]        @relation("NotificationRecipient")
+  notificationActions   Notification[]        @relation("NotificationActor")
+  attachmentsUploaded   Attachment[]
+}
+
+model RefreshSession {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  tokenHash           String    @unique @db.Char(64)
+  familyId            String    @db.Uuid
+  expiresAt           DateTime
+  lastUsedAt          DateTime?
+  revokedAt           DateTime?
+  revokeReason        String?   @db.VarChar(120)
+  replacedBySessionId String?   @unique @db.Uuid
+  userAgent           String?   @db.VarChar(512)
+  ipAddress           String?   @db.VarChar(64)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshSession? @relation("RefreshSessionRotation", fields: [replacedBySessionId], references: [id], onDelete: SetNull)
+  replaces   RefreshSession? @relation("RefreshSessionRotation")
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([familyId])
+}
+
+model Workspace {
+  id               String    @id @default(uuid()) @db.Uuid
+  ownerId          String    @db.Uuid
+  name             String    @db.VarChar(160)
+  slug             String    @unique @db.VarChar(120)
+  storageUsedBytes BigInt    @default(0)
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  owner         User                  @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members       WorkspaceMember[]
+  invitations   WorkspaceInvitation[]
+  documents     Document[]
+  attachments   Attachment[]
+  notifications Notification[]
+  subscription  Subscription?
+  billingEvents BillingEvent[]
+
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @db.Uuid
+  userId      String        @db.Uuid
+  role        WorkspaceRole
+  addedById   String?       @db.Uuid
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("WorkspaceMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy   User?     @relation("WorkspaceMemberAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, userId])
+  @@index([userId, workspaceId])
+  @@index([workspaceId, role])
+}
+
+model WorkspaceInvitation {
+  id           String           @id @default(uuid()) @db.Uuid
+  workspaceId  String           @db.Uuid
+  email        String           @db.VarChar(320)
+  role         WorkspaceRole
+  tokenHash    String           @unique @db.Char(64)
+  status       InvitationStatus @default(PENDING)
+  invitedById  String?          @db.Uuid
+  acceptedById String?          @db.Uuid
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy  User?     @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User?     @relation("InvitationAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, email, status])
+  @@index([email, status, expiresAt])
+}
+
+model Document {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  workspaceId         String                   @db.Uuid
+  parentId            String?                  @db.Uuid
+  createdById         String                   @db.Uuid
+  updatedById         String?                  @db.Uuid
+  title               String                   @default("Untitled") @db.VarChar(500)
+  sortKey             String                   @db.VarChar(255)
+  publicationState    DocumentPublicationState @default(PRIVATE)
+  publicSlug          String?                  @unique @db.VarChar(160)
+  publishedAt         DateTime?
+  contentProjection   Json?
+  projectionSequence  BigInt                   @default(0)
+  projectionUpdatedAt DateTime?
+  archivedAt          DateTime?
+  deletedAt           DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  workspace     Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent        Document?             @relation("DocumentHierarchy", fields: [parentId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  children      Document[]            @relation("DocumentHierarchy")
+  createdBy     User                  @relation("DocumentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy     User?                 @relation("DocumentUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  accessGrants  DocumentAccessGrant[]
+  shareLinks    DocumentShareLink[]
+  snapshots     YjsSnapshot[]
+  crdtUpdates   YjsUpdate[]
+  versions      DocumentVersion[]
+  comments      Comment[]
+  notifications Notification[]
+  attachments   Attachment[]
+
+  @@unique([id, workspaceId])
+  @@index([workspaceId, parentId, deletedAt, sortKey])
+  @@index([workspaceId, publicationState, deletedAt])
+  @@index([createdById])
+}
+
+model DocumentAccessGrant {
+  id          String             @id @default(uuid()) @db.Uuid
+  documentId  String             @db.Uuid
+  userId      String             @db.Uuid
+  grantedById String?            @db.Uuid
+  accessMode  DocumentAccessMode
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user      User     @relation("DocumentGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User?    @relation("DocumentGrantCreator", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([documentId, userId])
+  @@index([userId, revokedAt, expiresAt])
+  @@index([documentId, revokedAt])
+}
+
+model DocumentShareLink {
+  id          String             @id @default(uuid()) @db.Uuid
+  documentId  String             @db.Uuid
+  tokenHash   String             @unique @db.Char(64)
+  accessMode  DocumentAccessMode
+  createdById String?            @db.Uuid
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("ShareLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([documentId, revokedAt, expiresAt])
+}
+
+model YjsSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  documentId  String   @db.Uuid
+  sequence    BigInt
+  state       Bytes    @db.ByteA
+  stateVector Bytes?   @db.ByteA
+  contentHash String   @db.Char(64)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  document         Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  compactedUpdates YjsUpdate[] @relation("CompactingSnapshot")
+
+  @@unique([documentId, sequence])
+  @@unique([id, documentId])
+  @@index([documentId, sequence(sort: Desc)])
+}
+
+model YjsUpdate {
+  id                    String    @id @default(uuid()) @db.Uuid
+  documentId            String    @db.Uuid
+  actorUserId           String?   @db.Uuid
+  sequence              BigInt
+  updateHash            String    @db.Char(64)
+  update                Bytes     @db.ByteA
+  compactedBySnapshotId String?   @db.Uuid
+  compactedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  document            Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  actor               User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  compactedBySnapshot YjsSnapshot? @relation("CompactingSnapshot", fields: [compactedBySnapshotId, documentId], references: [id, documentId], onDelete: Restrict)
+
+  @@unique([documentId, sequence])
+  @@unique([documentId, updateHash])
+  @@index([documentId, sequence])
+  @@index([compactedBySnapshotId])
+}
+
+model DocumentVersion {
+  id                    String   @id @default(uuid()) @db.Uuid
+  documentId            String   @db.Uuid
+  authorId              String?  @db.Uuid
+  restoredFromVersionId String?  @db.Uuid
+  sourceSequence        BigInt
+  title                 String   @db.VarChar(500)
+  yjsState              Bytes    @db.ByteA
+  contentProjection     Json
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  document     Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author       User?             @relation("DocumentVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  restoredFrom DocumentVersion?  @relation("DocumentVersionRestore", fields: [restoredFromVersionId, documentId], references: [id, documentId], onDelete: Restrict)
+  restores     DocumentVersion[] @relation("DocumentVersionRestore")
+
+  @@unique([id, documentId])
+  @@index([documentId, createdAt(sort: Desc)])
+  @@index([authorId])
+}
+
+model Comment {
+  id           String    @id @default(uuid()) @db.Uuid
+  documentId   String    @db.Uuid
+  authorId     String    @db.Uuid
+  parentId     String?   @db.Uuid
+  blockId      String?   @db.VarChar(160)
+  body         String    @db.Text
+  resolvedAt   DateTime?
+  resolvedById String?   @db.Uuid
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author        User           @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  parent        Comment?       @relation("CommentReplies", fields: [parentId, documentId], references: [id, documentId], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentReplies")
+  resolvedBy    User?          @relation("CommentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  notifications Notification[]
+
+  @@unique([id, documentId])
+  @@index([documentId, parentId, createdAt])
+  @@index([authorId])
+}
+
+model Notification {
+  id          String           @id @default(uuid()) @db.Uuid
+  recipientId String           @db.Uuid
+  actorId     String?          @db.Uuid
+  workspaceId String?          @db.Uuid
+  documentId  String?          @db.Uuid
+  commentId   String?          @db.Uuid
+  type        NotificationType
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  recipient User       @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User?      @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  comment   Comment?   @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, readAt, createdAt(sort: Desc)])
+  @@index([workspaceId])
+  @@index([documentId])
+}
+
+model Attachment {
+  id           String           @id @default(uuid()) @db.Uuid
+  workspaceId  String           @db.Uuid
+  documentId   String           @db.Uuid
+  uploadedById String           @db.Uuid
+  bucket       String           @db.VarChar(255)
+  objectKey    String           @unique @db.VarChar(1024)
+  fileName     String           @db.VarChar(500)
+  mimeType     String           @db.VarChar(255)
+  sizeBytes    BigInt
+  checksum     String?          @db.Char(64)
+  status       AttachmentStatus @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document   Document  @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  uploadedBy User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status])
+  @@index([documentId, status])
+  @@index([uploadedById])
+}
+
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  workspaceId            String             @unique @db.Uuid
+  plan                   Plan               @default(FREE)
+  status                 SubscriptionStatus @default(ACTIVE)
+  providerSubscriptionId String?            @unique @db.VarChar(255)
+  memberLimit            Int                @default(5)
+  documentLimit          Int                @default(100)
+  storageLimitBytes      BigInt             @default(1073741824)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  canceledAt             DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  billingEvents BillingEvent[]
+
+  @@index([status, currentPeriodEnd])
+}
+
+model BillingEvent {
+  id             String             @id @default(uuid()) @db.Uuid
+  eventId        String             @unique @db.VarChar(255)
+  eventType      String             @db.VarChar(160)
+  workspaceId    String?            @db.Uuid
+  subscriptionId String?            @db.Uuid
+  status         BillingEventStatus @default(RECEIVED)
+  payload        Json
+  processedAt    DateTime?
+  failureReason  String?            @db.Text
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
