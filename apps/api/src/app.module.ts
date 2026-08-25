@@ -11,6 +11,7 @@ import { MetricsModule } from "./metrics/metrics.module";
 import { AuthModule } from "./auth/auth.module";
 import { PermissionsModule } from "./permissions/permissions.module";
 import { WorkspacesModule } from "./workspaces/workspaces.module";
+import { DocumentsModule } from "./documents/documents.module";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { WorkspacesModule } from "./workspaces/workspaces.module";
     AuthModule,
     PermissionsModule,
     WorkspacesModule,
+    DocumentsModule,
   ],
 })
 export class AppModule implements NestModule {

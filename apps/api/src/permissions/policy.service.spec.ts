@@ -47,7 +47,11 @@ describe("workspace policy persistence boundary", () => {
     await assert.rejects(new PolicyService(databaseFor(WorkspaceRole.OWNER, new Date())).requireWorkspaceCapability("owner-1", "workspace-1", "workspace.read"), NotFoundException);
   });
 
-  it("rejects viewer mutations after loading current membership", async () => {
-    await assert.rejects(new PolicyService(databaseFor(WorkspaceRole.VIEWER)).requireWorkspaceCapability("viewer-1", "workspace-1", "workspace.manage"), ForbiddenException);
+  it("denies a Viewer document mutations after loading current membership", async () => {
+    await assert.rejects(new PolicyService(databaseFor(WorkspaceRole.VIEWER)).requireWorkspaceCapability("viewer-1", "workspace-1", "document.edit"), ForbiddenException);
+  });
+
+  it("denies an outsider direct document access without revealing the workspace", async () => {
+    await assert.rejects(new PolicyService(databaseFor(null)).requireWorkspaceCapability("outsider", "workspace-1", "document.read"), NotFoundException);
   });
 });
