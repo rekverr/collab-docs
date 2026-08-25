@@ -1,0 +1,11 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  background: #f7f6f2;
+  color: #24211d;
+}
+
+body { margin: 0; }
+main { max-width: 48rem; margin: 0 auto; padding: 8rem 2rem; }
+.eyebrow { color: #675c4c; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+h1 { font-size: clamp(2.5rem, 8vw, 5rem); line-height: 0.95; margin: 1rem 0; }
