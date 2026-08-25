@@ -9,6 +9,8 @@ import { QueueModule } from "./infrastructure/queue/queue.module";
 import { RedisModule } from "./infrastructure/redis/redis.module";
 import { MetricsModule } from "./metrics/metrics.module";
 import { AuthModule } from "./auth/auth.module";
+import { PermissionsModule } from "./permissions/permissions.module";
+import { WorkspacesModule } from "./workspaces/workspaces.module";
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { AuthModule } from "./auth/auth.module";
     MetricsModule,
     HealthModule,
     AuthModule,
+    PermissionsModule,
+    WorkspacesModule,
   ],
 })
 export class AppModule implements NestModule {

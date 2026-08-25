@@ -1,0 +1,142 @@
+import { randomBytes, createHash } from "node:crypto";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { InvitationStatus, Plan, SubscriptionStatus, WorkspaceRole } from "@prisma/client";
+import { PrismaService } from "../infrastructure/prisma/prisma.service";
+import { PolicyService } from "../permissions/policy.service";
+import type { AuthenticatedUser } from "../auth/auth.types";
+import type { CreateWorkspaceDto, InviteWorkspaceMemberDto, UpdateWorkspaceDto } from "./dto/workspace.dto";
+
+const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+
+@Injectable()
+export class WorkspacesService {
+  constructor(private readonly prisma: PrismaService, private readonly policy: PolicyService) {}
+
+  create(userId: string, input: CreateWorkspaceDto) {
+    return this.prisma.$transaction(async (transaction) => {
+      const workspace = await transaction.workspace.create({
+        data: { name: input.name.trim(), slug: input.slug, ownerId: userId },
+        select: { id: true, name: true, slug: true, ownerId: true, createdAt: true, updatedAt: true },
+      });
+      await transaction.workspaceMember.create({ data: { workspaceId: workspace.id, userId, role: WorkspaceRole.OWNER, addedById: userId } });
+      await transaction.subscription.create({
+        data: {
+          workspaceId: workspace.id, plan: Plan.FREE, status: SubscriptionStatus.ACTIVE,
+          memberLimit: 5, documentLimit: 100, storageLimitBytes: 104857600n,
+        },
+      });
+      return { ...workspace, role: WorkspaceRole.OWNER };
+    });
+  }
+
+  async list(userId: string) {
+    const memberships = await this.prisma.workspaceMember.findMany({
+      where: { userId, workspace: { deletedAt: null } },
+      orderBy: { createdAt: "asc" },
+      select: { role: true, workspace: { select: { id: true, name: true, slug: true, ownerId: true, createdAt: true, updatedAt: true } } },
+    });
+    return memberships.map(({ role, workspace }) => ({ ...workspace, role }));
+  }
+
+  async get(userId: string, workspaceId: string) {
+    const access = await this.policy.requireWorkspaceCapability(userId, workspaceId, "workspace.read");
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, name: true, slug: true, ownerId: true, createdAt: true, updatedAt: true },
+    });
+    if (workspace === null) throw new NotFoundException("Workspace not found");
+    return { ...workspace, role: access.role };
+  }
+
+  update(userId: string, workspaceId: string, input: UpdateWorkspaceDto) {
+    return this.prisma.$transaction(async (transaction) => {
+      await this.policy.requireWorkspaceCapability(userId, workspaceId, "workspace.manage", transaction);
+      return transaction.workspace.update({
+        where: { id: workspaceId }, data: { ...(input.name === undefined ? {} : { name: input.name.trim() }) },
+        select: { id: true, name: true, slug: true, ownerId: true, createdAt: true, updatedAt: true },
+      });
+    });
+  }
+
+  async listMembers(userId: string, workspaceId: string) {
+    await this.policy.requireWorkspaceCapability(userId, workspaceId, "workspace.read");
+    return this.prisma.workspaceMember.findMany({
+      where: { workspaceId }, orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+      select: { id: true, role: true, createdAt: true, updatedAt: true, user: { select: { id: true, email: true, displayName: true } } },
+    });
+  }
+
+  invite(userId: string, workspaceId: string, input: InviteWorkspaceMemberDto) {
+    const email = input.email.trim().toLowerCase();
+    const rawToken = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + invitationLifetimeMs);
+    return this.prisma.$transaction(async (transaction) => {
+      const access = await this.policy.requireWorkspaceCapability(userId, workspaceId, "member.invite", transaction);
+      this.policy.assertCanAssignRole(access.role, input.role);
+      const existingUser = await transaction.user.findUnique({ where: { email }, select: { id: true } });
+      if (existingUser !== null) {
+        const membership = await transaction.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: existingUser.id } } });
+        if (membership !== null) throw new ConflictException("User is already a workspace member");
+      }
+      const pending = await transaction.workspaceInvitation.findFirst({
+        where: { workspaceId, email, status: InvitationStatus.PENDING, expiresAt: { gt: new Date() } }, select: { id: true },
+      });
+      if (pending !== null) throw new ConflictException("A pending invitation already exists for this email");
+      const invitation = await transaction.workspaceInvitation.create({
+        data: { workspaceId, email, role: input.role, tokenHash, expiresAt, invitedById: userId },
+        select: { id: true, workspaceId: true, email: true, role: true, status: true, expiresAt: true, createdAt: true },
+      });
+      return { ...invitation, token: rawToken };
+    });
+  }
+
+  accept(user: AuthenticatedUser, rawToken: string) {
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const now = new Date();
+    return this.prisma.$transaction(async (transaction) => {
+      const invitation = await transaction.workspaceInvitation.findUnique({ where: { tokenHash } });
+      if (invitation === null || invitation.status !== InvitationStatus.PENDING) throw new NotFoundException("Invitation not found");
+      if (invitation.expiresAt <= now) throw new UnprocessableEntityException("Invitation has expired");
+      if (invitation.email !== user.email.toLowerCase()) throw new ForbiddenException("Invitation belongs to another account");
+      const existing = await transaction.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: user.id } } });
+      if (existing !== null) throw new ConflictException("User is already a workspace member");
+      const claimed = await transaction.workspaceInvitation.updateMany({
+        where: { id: invitation.id, status: InvitationStatus.PENDING, expiresAt: { gt: now } },
+        data: { status: InvitationStatus.ACCEPTED, acceptedById: user.id, acceptedAt: now },
+      });
+      if (claimed.count !== 1) throw new ConflictException("Invitation has already been used");
+      const membership = await transaction.workspaceMember.create({
+        data: { workspaceId: invitation.workspaceId, userId: user.id, role: invitation.role, addedById: invitation.invitedById },
+        select: { id: true, workspaceId: true, userId: true, role: true, createdAt: true },
+      });
+      return membership;
+    });
+  }
+
+  updateMemberRole(actorId: string, workspaceId: string, targetUserId: string, role: WorkspaceRole) {
+    return this.prisma.$transaction(async (transaction) => {
+      const access = await this.policy.requireWorkspaceCapability(actorId, workspaceId, "member.manage", transaction);
+      this.policy.assertCanAssignRole(access.role, role);
+      const target = await transaction.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: targetUserId } } });
+      if (target === null) throw new NotFoundException("Workspace member not found");
+      if (target.role === WorkspaceRole.OWNER || target.userId === access.workspace.ownerId) throw new ForbiddenException("The workspace owner role cannot be changed");
+      if (access.role !== WorkspaceRole.OWNER && target.role === WorkspaceRole.ADMIN) throw new ForbiddenException("Only the workspace owner can manage administrators");
+      return transaction.workspaceMember.update({
+        where: { id: target.id }, data: { role },
+        select: { id: true, workspaceId: true, userId: true, role: true, updatedAt: true },
+      });
+    });
+  }
+
+  removeMember(actorId: string, workspaceId: string, targetUserId: string): Promise<void> {
+    return this.prisma.$transaction(async (transaction) => {
+      const access = await this.policy.requireWorkspaceCapability(actorId, workspaceId, "member.manage", transaction);
+      const target = await transaction.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: targetUserId } } });
+      if (target === null) throw new NotFoundException("Workspace member not found");
+      if (target.role === WorkspaceRole.OWNER || target.userId === access.workspace.ownerId) throw new ForbiddenException("The workspace owner cannot be removed");
+      if (access.role !== WorkspaceRole.OWNER && target.role === WorkspaceRole.ADMIN) throw new ForbiddenException("Only the workspace owner can manage administrators");
+      await transaction.workspaceMember.delete({ where: { id: target.id } });
+    });
+  }
+}
