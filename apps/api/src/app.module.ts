@@ -8,6 +8,7 @@ import { PrismaModule } from "./infrastructure/prisma/prisma.module";
 import { QueueModule } from "./infrastructure/queue/queue.module";
 import { RedisModule } from "./infrastructure/redis/redis.module";
 import { MetricsModule } from "./metrics/metrics.module";
+import { AuthModule } from "./auth/auth.module";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MetricsModule } from "./metrics/metrics.module";
     QueueModule,
     MetricsModule,
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule implements NestModule {
