@@ -2,8 +2,16 @@ import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import type { DocumentProjection } from "./projection.js";
 
-export interface ProjectionEvent { documentId: string; sequence: bigint; projection: DocumentProjection; published: boolean }
-export interface ProjectionPublisher { publish(event: ProjectionEvent): Promise<void>; close?(): Promise<void> }
+export interface ProjectionEvent {
+  documentId: string;
+  sequence: bigint;
+  projection: DocumentProjection;
+  published: boolean;
+}
+export interface ProjectionPublisher {
+  publish(event: ProjectionEvent): Promise<void>;
+  close?(): Promise<void>;
+}
 
 export class BullMqProjectionPublisher implements ProjectionPublisher {
   private readonly redis: Redis;
@@ -18,12 +26,27 @@ export class BullMqProjectionPublisher implements ProjectionPublisher {
 
   async publish(event: ProjectionEvent): Promise<void> {
     const sequence = event.sequence.toString();
-    await this.search.add("index-document", { documentId: event.documentId, sequence }, {
-      jobId: `${event.documentId}-${sequence}`, attempts: 5, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: 1000,
-    });
-    if (event.published) await this.revalidation.add("revalidate-document", { documentId: event.documentId, sequence }, {
-      jobId: `${event.documentId}-${sequence}`, attempts: 5, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: 1000,
-    });
+    await this.search.add(
+      "index-document",
+      { documentId: event.documentId, sequence },
+      {
+        jobId: `${event.documentId}-${sequence}`,
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: 1000,
+      },
+    );
+    if (event.published)
+      await this.revalidation.add(
+        "revalidate-document",
+        { documentId: event.documentId, sequence },
+        {
+          jobId: `${event.documentId}-${sequence}`,
+          attempts: 5,
+          backoff: { type: "exponential", delay: 1000 },
+          removeOnComplete: 1000,
+        },
+      );
   }
 
   async close(): Promise<void> {
@@ -32,4 +55,8 @@ export class BullMqProjectionPublisher implements ProjectionPublisher {
   }
 }
 
-export class NoopProjectionPublisher implements ProjectionPublisher { publish(): Promise<void> { return Promise.resolve(); } }
+export class NoopProjectionPublisher implements ProjectionPublisher {
+  publish(): Promise<void> {
+    return Promise.resolve();
+  }
+}

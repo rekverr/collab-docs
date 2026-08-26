@@ -24,7 +24,12 @@ export class MetricsService {
     });
   }
 
-  observeHttpRequest(method: string, route: string, statusCode: number, durationSeconds: number): void {
+  observeHttpRequest(
+    method: string,
+    route: string,
+    statusCode: number,
+    durationSeconds: number,
+  ): void {
     const labels = { method, route, status_code: String(statusCode) };
     this.requestCount.inc(labels);
     this.requestDuration.observe(labels, durationSeconds);

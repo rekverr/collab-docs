@@ -1,5 +1,14 @@
 import { plainToInstance, Type } from "class-transformer";
-import { IsEnum, IsInt, IsString, IsUrl, Length, Matches, Min, validateSync } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsString,
+  IsUrl,
+  Length,
+  Matches,
+  Min,
+  validateSync,
+} from "class-validator";
 
 export enum RuntimeEnvironment {
   Development = "development",
@@ -90,7 +99,10 @@ export function validateEnvironment(values: Record<string, unknown>): AppEnviron
   });
 
   if (errors.length > 0) {
-    const invalidKeys = errors.map((error) => error.property).sort().join(", ");
+    const invalidKeys = errors
+      .map((error) => error.property)
+      .sort()
+      .join(", ");
     throw new Error(`Environment validation failed for: ${invalidKeys}`);
   }
 

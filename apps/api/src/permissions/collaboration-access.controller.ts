@@ -3,7 +3,10 @@ import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swa
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { CollaborationAccessService, type CollaborationAccess } from "./collaboration-access.service";
+import {
+  CollaborationAccessService,
+  type CollaborationAccess,
+} from "./collaboration-access.service";
 
 @ApiTags("internal-collaboration")
 @ApiBearerAuth()
@@ -18,5 +21,7 @@ export class CollaborationAccessController {
   resolve(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
-  ): Promise<CollaborationAccess> { return this.access.resolve(user, documentId); }
+  ): Promise<CollaborationAccess> {
+    return this.access.resolve(user, documentId);
+  }
 }

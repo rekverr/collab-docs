@@ -16,7 +16,8 @@ export class RequestObservabilityMiddleware implements NestMiddleware {
 
   use(request: Request, response: Response, next: NextFunction): void {
     const suppliedId = request.header("x-request-id");
-    const requestId = suppliedId !== undefined && validRequestId.test(suppliedId) ? suppliedId : randomUUID();
+    const requestId =
+      suppliedId !== undefined && validRequestId.test(suppliedId) ? suppliedId : randomUUID();
     const startedAt = process.hrtime.bigint();
     response.setHeader("x-request-id", requestId);
 
@@ -25,7 +26,12 @@ export class RequestObservabilityMiddleware implements NestMiddleware {
         const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
         const route = request.route?.path;
         const routeLabel = typeof route === "string" ? route : "unmatched";
-        this.metrics.observeHttpRequest(request.method, routeLabel, response.statusCode, durationSeconds);
+        this.metrics.observeHttpRequest(
+          request.method,
+          routeLabel,
+          response.statusCode,
+          durationSeconds,
+        );
         this.logger.event("info", "http_request_completed", {
           durationMs: Math.round(durationSeconds * 1000),
           method: request.method,

@@ -1,4 +1,11 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Injectable } from "@nestjs/common";
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 import { JsonLogger } from "../logging/json-logger.service";
 import { getRequestId } from "../request/request-context";
@@ -74,13 +81,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const prismaCode = getPrismaErrorCode(exception);
     if (prismaCode !== undefined) {
       if (prismaCode === "P2002") {
-        return { status: HttpStatus.CONFLICT, code: "CONFLICT", message: "The resource already exists" };
+        return {
+          status: HttpStatus.CONFLICT,
+          code: "CONFLICT",
+          message: "The resource already exists",
+        };
       }
       if (prismaCode === "P2025") {
-        return { status: HttpStatus.NOT_FOUND, code: "NOT_FOUND", message: "The resource was not found" };
+        return {
+          status: HttpStatus.NOT_FOUND,
+          code: "NOT_FOUND",
+          message: "The resource was not found",
+        };
       }
       if (prismaCode === "P2003") {
-        return { status: HttpStatus.CONFLICT, code: "REFERENCE_CONFLICT", message: "The resource is still in use" };
+        return {
+          status: HttpStatus.CONFLICT,
+          code: "REFERENCE_CONFLICT",
+          message: "The resource is still in use",
+        };
       }
       return this.internalError();
     }

@@ -5,7 +5,11 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import * as Y from "yjs";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
-import { AuthorizationFailure, type CollaborationAuthorizer, type CollaborationIdentity } from "./authorization.js";
+import {
+  AuthorizationFailure,
+  type CollaborationAuthorizer,
+  type CollaborationIdentity,
+} from "./authorization.js";
 import type { StructuredLogger } from "./logger.js";
 import { CollaborationMetrics } from "./metrics.js";
 import type { CollaborationPersistence } from "./persistence.js";
@@ -17,7 +21,11 @@ const messageAwareness = 1;
 const syncStep2 = 1;
 const syncUpdate = 2;
 
-interface AuthMessage { type: "auth"; documentId: string; accessToken: string }
+interface AuthMessage {
+  type: "auth";
+  documentId: string;
+  accessToken: string;
+}
 interface ConnectionState {
   identity: CollaborationIdentity;
   accessToken: string;
@@ -57,21 +65,37 @@ export class CollaborationServer {
     private readonly logger: StructuredLogger,
   ) {
     this.http = createServer((request, response) => {
-      if (request.url === "/health") { response.writeHead(200, { "content-type": "application/json" }); response.end('{"status":"ok"}'); return; }
-      if (request.url === "/metrics") { response.writeHead(200, { "content-type": "text/plain; version=0.0.4" }); response.end(this.metrics.render()); return; }
-      response.writeHead(404); response.end();
+      if (request.url === "/health") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"status":"ok"}');
+        return;
+      }
+      if (request.url === "/metrics") {
+        response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
+        response.end(this.metrics.render());
+        return;
+      }
+      response.writeHead(404);
+      response.end();
     });
-    this.sockets = new WebSocketServer({ server: this.http, maxPayload: options.maxMessageBytes ?? 1024 * 1024 });
+    this.sockets = new WebSocketServer({
+      server: this.http,
+      maxPayload: options.maxMessageBytes ?? 1024 * 1024,
+    });
     this.sockets.on("connection", (socket) => this.handleConnection(socket));
   }
 
   async start(): Promise<number> {
     await new Promise<void>((resolve, reject) => {
       this.http.once("error", reject);
-      this.http.listen(this.options.port, this.options.host ?? "0.0.0.0", () => { this.http.off("error", reject); resolve(); });
+      this.http.listen(this.options.port, this.options.host ?? "0.0.0.0", () => {
+        this.http.off("error", reject);
+        resolve();
+      });
     });
     const address = this.http.address();
-    if (address === null || typeof address === "string") throw new Error("Collaboration server did not bind a TCP port");
+    if (address === null || typeof address === "string")
+      throw new Error("Collaboration server did not bind a TCP port");
     this.logger.event("info", "collab_listening", { port: address.port });
     return address.port;
   }
@@ -80,17 +104,26 @@ export class CollaborationServer {
     for (const socket of this.sockets.clients) socket.close(1001, "Server shutting down");
     for (const room of this.rooms.values()) this.destroyRoom(room);
     await new Promise<void>((resolve) => this.sockets.close(() => resolve()));
-    if (this.http.listening) await new Promise<void>((resolve, reject) => this.http.close((error) => error === undefined ? resolve() : reject(error)));
+    if (this.http.listening)
+      await new Promise<void>((resolve, reject) =>
+        this.http.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
     await this.persistence.close?.();
   }
 
-  terminateDocument(documentId: string, reason = "Document access revoked"): void {
+  terminateDocument(
+    documentId: string,
+    reason = "Document access revoked",
+    closeCode: 4403 | 4404 = 4403,
+  ): void {
     const room = this.rooms.get(documentId);
     if (room === undefined) return;
-    for (const socket of room.connections.keys()) socket.close(4403, reason);
+    for (const socket of room.connections.keys()) socket.close(closeCode, reason);
   }
 
-  activeRoomCount(): number { return this.rooms.size; }
+  activeRoomCount(): number {
+    return this.rooms.size;
+  }
 
   private handleConnection(socket: WebSocket): void {
     this.metrics.connectionsTotal += 1;
@@ -98,20 +131,36 @@ export class CollaborationServer {
     let state: ConnectionState | undefined;
     let closed = false;
     let authenticating = false;
-    const authTimer = setTimeout(() => this.fail(socket, 4401, "Authentication required", "auth_timeout"), this.options.authenticationTimeoutMs ?? 5000);
+    const authTimer = setTimeout(
+      () => this.fail(socket, 4401, "Authentication required", "auth_timeout"),
+      this.options.authenticationTimeoutMs ?? 5000,
+    );
 
     socket.on("message", (data, isBinary) => {
       if (state === undefined) {
-        if (authenticating) { this.protocolFailure(socket, "duplicate_auth_message"); return; }
-        if (isBinary) { this.protocolFailure(socket, "binary_before_auth"); return; }
+        if (authenticating) {
+          this.protocolFailure(socket, "duplicate_auth_message");
+          return;
+        }
+        if (isBinary) {
+          this.protocolFailure(socket, "binary_before_auth");
+          return;
+        }
         authenticating = true;
-        void this.authenticate(socket, rawData(data), authTimer).then((authenticated) => { if (!closed && authenticated !== undefined) state = authenticated; });
+        void this.authenticate(socket, rawData(data), authTimer).then((authenticated) => {
+          if (!closed && authenticated !== undefined) state = authenticated;
+        });
         return;
       }
-      if (!isBinary) { this.protocolFailure(socket, "text_after_auth"); return; }
+      if (!isBinary) {
+        this.protocolFailure(socket, "text_after_auth");
+        return;
+      }
       this.handleProtocolMessage(socket, state, rawData(data));
     });
-    socket.on("error", () => { this.logger.event("warn", "collab_socket_error"); });
+    socket.on("error", () => {
+      this.logger.event("warn", "collab_socket_error");
+    });
     socket.on("close", (code) => {
       closed = true;
       clearTimeout(authTimer);
@@ -122,37 +171,73 @@ export class CollaborationServer {
     });
   }
 
-  private async authenticate(socket: WebSocket, bytes: Uint8Array, authTimer: NodeJS.Timeout): Promise<ConnectionState | undefined> {
+  private async authenticate(
+    socket: WebSocket,
+    bytes: Uint8Array,
+    authTimer: NodeJS.Timeout,
+  ): Promise<ConnectionState | undefined> {
     let message: AuthMessage;
-    try { message = parseAuthMessage(new TextDecoder().decode(bytes)); }
-    catch { this.protocolFailure(socket, "invalid_auth_message"); return undefined; }
+    try {
+      message = parseAuthMessage(new TextDecoder().decode(bytes));
+    } catch {
+      this.protocolFailure(socket, "invalid_auth_message");
+      return undefined;
+    }
     try {
       const identity = await this.authorizer.authorize(message.accessToken, message.documentId);
       if (socket.readyState !== WebSocket.OPEN) return undefined;
       const room = await this.getRoom(message.documentId);
-      if (socket.readyState !== WebSocket.OPEN) { if (room.connections.size === 0) this.destroyRoom(room); return undefined; }
-      const state: ConnectionState = { identity, accessToken: message.accessToken, room, awarenessClientIds: new Set() };
+      if (socket.readyState !== WebSocket.OPEN) {
+        if (room.connections.size === 0) this.destroyRoom(room);
+        return undefined;
+      }
+      const state: ConnectionState = {
+        identity,
+        accessToken: message.accessToken,
+        room,
+        awarenessClientIds: new Set(),
+      };
       room.connections.set(socket, state);
       clearTimeout(authTimer);
       this.sendInitialState(socket, room);
       this.scheduleAuthorizationRecheck(socket, state);
-      this.logger.event("info", "collab_connected", { documentId: message.documentId, userId: identity.userId, canWrite: identity.canWrite, activeRooms: this.rooms.size });
+      this.logger.event("info", "collab_connected", {
+        documentId: message.documentId,
+        userId: identity.userId,
+        canWrite: identity.canWrite,
+        activeRooms: this.rooms.size,
+      });
       return state;
     } catch (error: unknown) {
       if (error instanceof AuthorizationFailure && error.kind === "authentication") {
-        this.metrics.authFailuresTotal += 1; this.fail(socket, 4401, "Authentication failed", "auth_failure");
+        this.metrics.authFailuresTotal += 1;
+        this.fail(socket, 4401, "Authentication failed", "auth_failure");
       } else if (error instanceof AuthorizationFailure && error.kind === "permission") {
-        this.metrics.permissionFailuresTotal += 1; this.fail(socket, 4403, "Document access denied", "permission_failure");
+        this.metrics.permissionFailuresTotal += 1;
+        this.fail(socket, 4403, "Document access denied", "permission_failure");
+      } else if (error instanceof AuthorizationFailure && error.kind === "document") {
+        this.metrics.permissionFailuresTotal += 1;
+        this.fail(socket, 4404, "Document was deleted", "document_unavailable");
       } else if (error instanceof DocumentUnavailableError) {
-        this.metrics.permissionFailuresTotal += 1; this.fail(socket, 4403, "Document is unavailable", "document_unavailable");
+        this.metrics.permissionFailuresTotal += 1;
+        this.fail(socket, 4404, "Document was deleted", "document_unavailable");
       } else {
-        this.fail(socket, 1013, "Authorization temporarily unavailable", "authorization_unavailable");
+        this.fail(
+          socket,
+          1013,
+          "Authorization temporarily unavailable",
+          "authorization_unavailable",
+        );
       }
       return undefined;
     }
   }
 
-  private handleProtocolMessage(socket: WebSocket, state: ConnectionState, bytes: Uint8Array): void {
+  private handleProtocolMessage(
+    socket: WebSocket,
+    state: ConnectionState,
+    bytes: Uint8Array,
+  ): void {
     try {
       const inspect = decoding.createDecoder(bytes);
       const type = decoding.readVarUint(inspect);
@@ -165,7 +250,10 @@ export class CollaborationServer {
           const viewerWrite = !state.identity.canWrite;
           if (viewerWrite) {
             this.metrics.rejectedWritesTotal += 1;
-            this.logger.event("warn", "collab_write_rejected", { documentId: state.identity.documentId, userId: state.identity.userId });
+            this.logger.event("warn", "collab_write_rejected", {
+              documentId: state.identity.documentId,
+              userId: state.identity.userId,
+            });
             socket.close(4403, "Document is read-only");
             return;
           }
@@ -178,7 +266,10 @@ export class CollaborationServer {
         const viewerWrite = !state.identity.canWrite && syncType !== 0;
         if (viewerWrite) {
           this.metrics.rejectedWritesTotal += 1;
-          this.logger.event("warn", "collab_write_rejected", { documentId: state.identity.documentId, userId: state.identity.userId });
+          this.logger.event("warn", "collab_write_rejected", {
+            documentId: state.identity.documentId,
+            userId: state.identity.userId,
+          });
           socket.close(4403, "Document is read-only");
           return;
         }
@@ -208,25 +299,46 @@ export class CollaborationServer {
     if (pending !== undefined) return pending;
     const creation = this.createRoom(documentId);
     this.pendingRooms.set(documentId, creation);
-    try { return await creation; } finally { this.pendingRooms.delete(documentId); }
+    try {
+      return await creation;
+    } finally {
+      this.pendingRooms.delete(documentId);
+    }
   }
 
   private async createRoom(documentId: string): Promise<CollaborationRoom> {
     const persisted = await this.persistence.load(documentId);
     const doc = reconstructDocument(persisted);
     const awareness = new awarenessProtocol.Awareness(doc);
-    const room: CollaborationRoom = { documentId, doc, awareness, connections: new Map(), writeChain: Promise.resolve(), failed: false };
-    awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
-      const clients = [...added, ...updated, ...removed];
-      if (clients.length === 0) return;
-      if (isConnectionState(origin)) {
-        for (const id of [...added, ...updated]) origin.awarenessClientIds.add(id);
-        for (const id of removed) origin.awarenessClientIds.delete(id);
-      }
-      const encoder = encoding.createEncoder(); encoding.writeVarUint(encoder, messageAwareness);
-      encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(awareness, clients));
-      this.broadcast(room, encoding.toUint8Array(encoder));
-    });
+    const room: CollaborationRoom = {
+      documentId,
+      doc,
+      awareness,
+      connections: new Map(),
+      writeChain: Promise.resolve(),
+      failed: false,
+    };
+    awareness.on(
+      "update",
+      (
+        { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+        origin: unknown,
+      ) => {
+        const clients = [...added, ...updated, ...removed];
+        if (clients.length === 0) return;
+        if (isConnectionState(origin)) {
+          for (const id of [...added, ...updated]) origin.awarenessClientIds.add(id);
+          for (const id of removed) origin.awarenessClientIds.delete(id);
+        }
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, messageAwareness);
+        encoding.writeVarUint8Array(
+          encoder,
+          awarenessProtocol.encodeAwarenessUpdate(awareness, clients),
+        );
+        this.broadcast(room, encoding.toUint8Array(encoder));
+      },
+    );
     this.rooms.set(documentId, room);
     this.metrics.activeRooms = this.rooms.size;
     this.logger.event("info", "collab_room_opened", { documentId, activeRooms: this.rooms.size });
@@ -234,19 +346,32 @@ export class CollaborationServer {
   }
 
   private sendInitialState(socket: WebSocket, room: CollaborationRoom): void {
-    const sync = encoding.createEncoder(); encoding.writeVarUint(sync, messageSync); syncProtocol.writeSyncStep1(sync, room.doc); socket.send(encoding.toUint8Array(sync));
+    const sync = encoding.createEncoder();
+    encoding.writeVarUint(sync, messageSync);
+    syncProtocol.writeSyncStep1(sync, room.doc);
+    socket.send(encoding.toUint8Array(sync));
     const clients = [...room.awareness.getStates().keys()];
     if (clients.length > 0) {
-      const awareness = encoding.createEncoder(); encoding.writeVarUint(awareness, messageAwareness);
-      encoding.writeVarUint8Array(awareness, awarenessProtocol.encodeAwarenessUpdate(room.awareness, clients)); socket.send(encoding.toUint8Array(awareness));
+      const awareness = encoding.createEncoder();
+      encoding.writeVarUint(awareness, messageAwareness);
+      encoding.writeVarUint8Array(
+        awareness,
+        awarenessProtocol.encodeAwarenessUpdate(room.awareness, clients),
+      );
+      socket.send(encoding.toUint8Array(awareness));
     }
   }
 
   private broadcast(room: CollaborationRoom, message: Uint8Array): void {
-    for (const socket of room.connections.keys()) if (socket.readyState === WebSocket.OPEN) socket.send(message);
+    for (const socket of room.connections.keys())
+      if (socket.readyState === WebSocket.OPEN) socket.send(message);
   }
 
-  private async persistAndBroadcast(socket: WebSocket, state: ConnectionState, update: Uint8Array): Promise<void> {
+  private async persistAndBroadcast(
+    socket: WebSocket,
+    state: ConnectionState,
+    update: Uint8Array,
+  ): Promise<void> {
     if (state.room.failed || socket.readyState !== WebSocket.OPEN) return;
     try {
       const current = await this.authorizer.authorize(state.accessToken, state.identity.documentId);
@@ -259,22 +384,48 @@ export class CollaborationServer {
       Y.applyUpdate(state.room.doc, update, "pending-durable-write");
       const projection = deriveDocumentProjection(state.room.doc);
       const stored = await this.persistence.storeUpdate({
-        documentId: state.identity.documentId, actorUserId: state.identity.userId, update, document: state.room.doc, projection,
+        documentId: state.identity.documentId,
+        actorUserId: state.identity.userId,
+        update,
+        document: state.room.doc,
+        projection,
       });
       if (stored.duplicate) this.metrics.duplicateUpdatesTotal += 1;
-      const encoder = encoding.createEncoder(); encoding.writeVarUint(encoder, messageSync); syncProtocol.writeUpdate(encoder, update);
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, messageSync);
+      syncProtocol.writeUpdate(encoder, update);
       this.broadcast(state.room, encoding.toUint8Array(encoder));
       this.logger.event("info", "collab_update_persisted", {
-        documentId: state.identity.documentId, sequence: stored.sequence.toString(), duplicate: stored.duplicate,
+        documentId: state.identity.documentId,
+        sequence: stored.sequence.toString(),
+        duplicate: stored.duplicate,
       });
     } catch (error: unknown) {
       state.room.failed = true;
-      const deleted = error instanceof DocumentUnavailableError || (error instanceof AuthorizationFailure && error.kind === "permission");
-      if (deleted) this.metrics.permissionFailuresTotal += 1;
+      const deleted = error instanceof DocumentUnavailableError;
+      const unavailableDocument =
+        error instanceof AuthorizationFailure && error.kind === "document";
+      const revoked = error instanceof AuthorizationFailure && error.kind === "permission";
+      if (deleted || unavailableDocument || revoked) this.metrics.permissionFailuresTotal += 1;
       else this.metrics.persistenceFailuresTotal += 1;
-      this.logger.event(deleted ? "warn" : "error", deleted ? "collab_document_unavailable" : "collab_persistence_failure", { documentId: state.identity.documentId });
+      this.logger.event(
+        deleted || unavailableDocument || revoked ? "warn" : "error",
+        deleted || unavailableDocument
+          ? "collab_document_unavailable"
+          : revoked
+            ? "collab_permission_revoked"
+            : "collab_persistence_failure",
+        { documentId: state.identity.documentId },
+      );
       for (const connection of state.room.connections.keys()) {
-        connection.close(deleted ? 4403 : 1011, deleted ? "Document is unavailable" : "Update was not saved; reconnect required");
+        connection.close(
+          deleted || unavailableDocument ? 4404 : revoked ? 4403 : 1011,
+          deleted || unavailableDocument
+            ? "Document was deleted"
+            : revoked
+              ? "Document access revoked"
+              : "Update was not saved; reconnect required",
+        );
       }
     }
   }
@@ -282,26 +433,50 @@ export class CollaborationServer {
   private leaveRoom(socket: WebSocket, state: ConnectionState): void {
     if (state.recheckTimer !== undefined) clearInterval(state.recheckTimer);
     state.room.connections.delete(socket);
-    if (state.awarenessClientIds.size > 0) awarenessProtocol.removeAwarenessStates(state.room.awareness, [...state.awarenessClientIds], state);
+    if (state.awarenessClientIds.size > 0)
+      awarenessProtocol.removeAwarenessStates(
+        state.room.awareness,
+        [...state.awarenessClientIds],
+        state,
+      );
     if (state.room.connections.size === 0) this.destroyRoom(state.room);
   }
 
   private destroyRoom(room: CollaborationRoom): void {
     if (!this.rooms.delete(room.documentId)) return;
-    void this.persistence.roomClosed?.(room.documentId).catch(() => this.logger.event("error", "collab_compaction_failure", { documentId: room.documentId }));
-    room.awareness.destroy(); room.doc.destroy();
+    void this.persistence
+      .roomClosed?.(room.documentId)
+      .catch(() =>
+        this.logger.event("error", "collab_compaction_failure", { documentId: room.documentId }),
+      );
+    room.awareness.destroy();
+    room.doc.destroy();
     this.metrics.activeRooms = this.rooms.size;
-    this.logger.event("info", "collab_room_closed", { documentId: room.documentId, activeRooms: this.rooms.size });
+    this.logger.event("info", "collab_room_closed", {
+      documentId: room.documentId,
+      activeRooms: this.rooms.size,
+    });
   }
 
   private scheduleAuthorizationRecheck(socket: WebSocket, state: ConnectionState): void {
     const interval = this.options.authorizationRecheckMs ?? 30_000;
     if (interval <= 0) return;
     state.recheckTimer = setInterval(() => {
-      void this.authorizer.authorize(state.accessToken, state.identity.documentId).then((identity) => {
-        if (identity.userId !== state.identity.userId) socket.close(4403, "Document access revoked");
-        else state.identity = identity;
-      }).catch(() => socket.close(4403, "Document access revoked"));
+      void this.authorizer
+        .authorize(state.accessToken, state.identity.documentId)
+        .then((identity) => {
+          if (identity.userId !== state.identity.userId)
+            socket.close(4403, "Document access revoked");
+          else state.identity = identity;
+        })
+        .catch((error: unknown) =>
+          socket.close(
+            error instanceof AuthorizationFailure && error.kind === "document" ? 4404 : 4403,
+            error instanceof AuthorizationFailure && error.kind === "document"
+              ? "Document was deleted"
+              : "Document access revoked",
+          ),
+        );
     }, interval);
   }
 
@@ -312,17 +487,25 @@ export class CollaborationServer {
 
   private fail(socket: WebSocket, code: number, message: string, event: string): void {
     this.logger.event("warn", event);
-    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) socket.close(code, message);
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+      socket.close(code, message);
   }
 }
 
 function parseAuthMessage(value: string): AuthMessage {
   const parsed: unknown = JSON.parse(value);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("invalid auth message");
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error("invalid auth message");
   const type: unknown = Reflect.get(parsed, "type");
   const documentId: unknown = Reflect.get(parsed, "documentId");
   const accessToken: unknown = Reflect.get(parsed, "accessToken");
-  if (type !== "auth" || typeof documentId !== "string" || typeof accessToken !== "string" || documentId.length > 128 || accessToken.length > 4096) {
+  if (
+    type !== "auth" ||
+    typeof documentId !== "string" ||
+    typeof accessToken !== "string" ||
+    documentId.length > 128 ||
+    accessToken.length > 4096
+  ) {
     throw new Error("invalid auth message");
   }
   return { type, documentId, accessToken };
@@ -335,20 +518,27 @@ function rawData(data: RawData): Uint8Array {
 }
 
 function isConnectionState(value: unknown): value is ConnectionState {
-  return typeof value === "object" && value !== null && Reflect.get(value, "awarenessClientIds") instanceof Set;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Reflect.get(value, "awarenessClientIds") instanceof Set
+  );
 }
 
 function isEmptyYjsUpdate(update: Uint8Array): boolean {
   try {
     const decoded = Y.decodeUpdate(update);
     return decoded.structs.length === 0 && decoded.ds.clients.size === 0;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeAwarenessUpdate(update: Uint8Array, state: ConnectionState): Uint8Array {
   const decoder = decoding.createDecoder(update);
   const count = decoding.readVarUint(decoder);
-  if (count > 16 || state.awarenessClientIds.size + count > 16) throw new Error("too many awareness clients");
+  if (count > 16 || state.awarenessClientIds.size + count > 16)
+    throw new Error("too many awareness clients");
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, count);
   for (let index = 0; index < count; index += 1) {
@@ -356,16 +546,24 @@ function sanitizeAwarenessUpdate(update: Uint8Array, state: ConnectionState): Ui
     const clock = decoding.readVarUint(decoder);
     const rawState = decoding.readVarString(decoder);
     for (const connection of state.room.connections.values()) {
-      if (connection !== state && connection.awarenessClientIds.has(clientId)) throw new Error("awareness client belongs to another connection");
+      if (connection !== state && connection.awarenessClientIds.has(clientId))
+        throw new Error("awareness client belongs to another connection");
     }
     const parsed: unknown = JSON.parse(rawState);
     let sanitized: string;
     if (parsed === null) sanitized = "null";
     else {
-      if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid awareness state");
-      sanitized = JSON.stringify(Object.assign({}, parsed, {
-        user: { id: state.identity.userId, email: state.identity.email, displayName: state.identity.displayName },
-      }));
+      if (typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("invalid awareness state");
+      sanitized = JSON.stringify(
+        Object.assign({}, parsed, {
+          user: {
+            id: state.identity.userId,
+            email: state.identity.email,
+            displayName: state.identity.displayName,
+          },
+        }),
+      );
     }
     encoding.writeVarUint(encoder, clientId);
     encoding.writeVarUint(encoder, clock);

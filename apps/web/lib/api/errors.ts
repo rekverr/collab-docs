@@ -1,7 +1,12 @@
 import type { ApiErrorBody } from "./types";
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string, readonly details: readonly string[] = []) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly details: readonly string[] = [],
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -10,7 +15,11 @@ export class ApiError extends Error {
 export function isApiErrorBody(value: unknown): value is ApiErrorBody {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.statusCode === "number" && typeof record.code === "string" && typeof record.message === "string";
+  return (
+    typeof record.statusCode === "number" &&
+    typeof record.code === "string" &&
+    typeof record.message === "string"
+  );
 }
 
 export function apiErrorMessage(error: unknown): string {

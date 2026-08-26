@@ -23,8 +23,7 @@ export interface SessionInput extends ClientMetadata {
 }
 
 export type RotationResult =
-  | { status: "rotated"; user: AuthUserRecord }
-  | { status: "invalid" | "reused" };
+  { status: "rotated"; user: AuthUserRecord } | { status: "invalid" | "reused" };
 
 export interface AuthResult {
   accessToken: string;

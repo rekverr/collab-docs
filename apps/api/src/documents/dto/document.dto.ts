@@ -22,12 +22,19 @@ export class UpdateDocumentMetadataDto {
 }
 
 export class MoveDocumentDto {
-  @ApiPropertyOptional({ type: String, nullable: true, description: "Null moves the document to the workspace root" })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "Null moves the document to the workspace root",
+  })
   @IsOptional()
   @IsUUID()
   parentId?: string | null;
 
-  @ApiPropertyOptional({ type: String, description: "Place immediately before this destination sibling" })
+  @ApiPropertyOptional({
+    type: String,
+    description: "Place immediately before this destination sibling",
+  })
   @IsOptional()
   @IsUUID()
   beforeDocumentId?: string;

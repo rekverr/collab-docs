@@ -11,7 +11,9 @@ export class CreateWorkspaceDto {
   @ApiProperty({ example: "acme-docs" })
   @IsString()
   @Length(3, 120)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: "slug must contain lowercase letters, numbers, and single hyphens" })
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: "slug must contain lowercase letters, numbers, and single hyphens",
+  })
   slug!: string;
 }
 

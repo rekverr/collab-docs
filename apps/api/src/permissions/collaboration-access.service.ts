@@ -12,15 +12,25 @@ export interface CollaborationAccess {
 
 @Injectable()
 export class CollaborationAccessService {
-  constructor(private readonly prisma: PrismaService, private readonly policy: PolicyService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policy: PolicyService,
+  ) {}
 
-  async resolve(user: { id: string; email: string; displayName: string | null }, documentId: string): Promise<CollaborationAccess> {
+  async resolve(
+    user: { id: string; email: string; displayName: string | null },
+    documentId: string,
+  ): Promise<CollaborationAccess> {
     const document = await this.prisma.document.findFirst({
       where: { id: documentId, deletedAt: null, archivedAt: null },
       select: { id: true, workspaceId: true },
     });
     if (document === null) throw new NotFoundException("Document not found");
-    const access = await this.policy.requireWorkspaceCapability(user.id, document.workspaceId, "document.read");
+    const access = await this.policy.requireWorkspaceCapability(
+      user.id,
+      document.workspaceId,
+      "document.read",
+    );
     return {
       documentId: document.id,
       userId: user.id,

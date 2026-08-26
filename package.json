@@ -10,7 +10,12 @@
     "dev": "pnpm --parallel --filter './apps/*' dev",
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }

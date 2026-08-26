@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { UnprocessableEntityException } from "@nestjs/common";
-import { appendedSortKey, assertExactSiblingOrder, assertNoHierarchyCycle, assertValidParent, formatSortKey, sortKeyGap } from "./document-hierarchy";
+import {
+  appendedSortKey,
+  assertExactSiblingOrder,
+  assertNoHierarchyCycle,
+  assertValidParent,
+  formatSortKey,
+  sortKeyGap,
+} from "./document-hierarchy";
 
 const root = { id: "root", workspaceId: "workspace-a", parentId: null };
 const child = { id: "child", workspaceId: "workspace-a", parentId: "root" };
@@ -15,18 +22,30 @@ describe("document hierarchy", () => {
 
   it("validates a deterministic complete sibling reorder", () => {
     assert.doesNotThrow(() => assertExactSiblingOrder(["a", "b", "c"], ["c", "a", "b"]));
-    assert.throws(() => assertExactSiblingOrder(["a", "b"], ["a", "a"]), UnprocessableEntityException);
+    assert.throws(
+      () => assertExactSiblingOrder(["a", "b"], ["a", "a"]),
+      UnprocessableEntityException,
+    );
     assert.throws(() => assertExactSiblingOrder(["a", "b"], ["a"]), UnprocessableEntityException);
   });
 
   it("allows moving a document beneath an unrelated descendant-free node", () => {
-    const parents = new Map<string, string | null>([["target", "root"], ["root", null]]);
+    const parents = new Map<string, string | null>([
+      ["target", "root"],
+      ["root", null],
+    ]);
     assert.doesNotThrow(() => assertNoHierarchyCycle("moving", "target", parents));
   });
 
   it("rejects hierarchy cycles", () => {
-    const parents = new Map<string, string | null>([["child", "moving"], ["moving", null]]);
-    assert.throws(() => assertNoHierarchyCycle("moving", "child", parents), UnprocessableEntityException);
+    const parents = new Map<string, string | null>([
+      ["child", "moving"],
+      ["moving", null],
+    ]);
+    assert.throws(
+      () => assertNoHierarchyCycle("moving", "child", parents),
+      UnprocessableEntityException,
+    );
   });
 
   it("rejects a cross-workspace parent", () => {

@@ -13,8 +13,15 @@ export class LoginRateLimiter {
   constructor(private readonly redis: RedisService) {}
 
   async check(email: string, ipAddress: string): Promise<void> {
-    const identity = createHash("sha256").update(`${email.trim().toLowerCase()}|${ipAddress}`).digest("hex");
-    const attempts = await this.redis.client.eval(incrementWindowScript, 1, `auth:login:${identity}`, "60");
+    const identity = createHash("sha256")
+      .update(`${email.trim().toLowerCase()}|${ipAddress}`)
+      .digest("hex");
+    const attempts = await this.redis.client.eval(
+      incrementWindowScript,
+      1,
+      `auth:login:${identity}`,
+      "60",
+    );
     if (typeof attempts === "number" && attempts > 5) {
       throw new HttpException("Too many login attempts", HttpStatus.TOO_MANY_REQUESTS);
     }

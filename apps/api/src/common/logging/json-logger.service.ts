@@ -38,7 +38,12 @@ export class JsonLogger implements LoggerService {
     this.write(level, event, undefined, safeFields);
   }
 
-  private write(level: LogLevel, message: string, context?: string, fields: Record<string, LogField> = {}): void {
+  private write(
+    level: LogLevel,
+    message: string,
+    context?: string,
+    fields: Record<string, LogField> = {},
+  ): void {
     const currentRequestId = getRequestId();
     const record = JSON.stringify({
       timestamp: new Date().toISOString(),

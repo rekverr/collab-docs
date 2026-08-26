@@ -10,7 +10,8 @@ export function middleware(request: NextRequest) {
     loginUrl.searchParams.set("next", path);
     return NextResponse.redirect(loginUrl);
   }
-  if (authRoutes.has(path) && hasRefreshSession) return NextResponse.redirect(new URL("/app", request.url));
+  if (authRoutes.has(path) && hasRefreshSession)
+    return NextResponse.redirect(new URL("/app", request.url));
   return NextResponse.next();
 }
 

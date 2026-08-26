@@ -19,12 +19,27 @@ export interface PolicyDatabase {
 
 const roleCapabilities: Readonly<Record<WorkspaceRole, ReadonlySet<WorkspaceCapability>>> = {
   OWNER: new Set([
-    "workspace.read", "workspace.manage", "member.invite", "member.manage", "billing.manage",
-    "document.create", "document.read", "document.edit", "document.delete", "document.publish",
+    "workspace.read",
+    "workspace.manage",
+    "member.invite",
+    "member.manage",
+    "billing.manage",
+    "document.create",
+    "document.read",
+    "document.edit",
+    "document.delete",
+    "document.publish",
   ]),
   ADMIN: new Set([
-    "workspace.read", "workspace.manage", "member.invite", "member.manage",
-    "document.create", "document.read", "document.edit", "document.delete", "document.publish",
+    "workspace.read",
+    "workspace.manage",
+    "member.invite",
+    "member.manage",
+    "document.create",
+    "document.read",
+    "document.edit",
+    "document.delete",
+    "document.publish",
   ]),
   EDITOR: new Set(["workspace.read", "document.create", "document.read", "document.edit"]),
   VIEWER: new Set(["workspace.read", "document.read"]),
@@ -39,12 +54,16 @@ export class PolicyService {
   }
 
   assertCapability(role: WorkspaceRole, capability: WorkspaceCapability): void {
-    if (!this.hasCapability(role, capability)) throw new ForbiddenException("You do not have permission to perform this action");
+    if (!this.hasCapability(role, capability))
+      throw new ForbiddenException("You do not have permission to perform this action");
   }
 
   assertCanAssignRole(actorRole: WorkspaceRole, targetRole: WorkspaceRole): void {
     this.assertCapability(actorRole, "member.manage");
-    if (targetRole === WorkspaceRole.OWNER) throw new ForbiddenException("Workspace ownership cannot be assigned through membership management");
+    if (targetRole === WorkspaceRole.OWNER)
+      throw new ForbiddenException(
+        "Workspace ownership cannot be assigned through membership management",
+      );
     if (actorRole !== WorkspaceRole.OWNER && targetRole === WorkspaceRole.ADMIN) {
       throw new ForbiddenException("Only the workspace owner can manage administrators");
     }

@@ -1,10 +1,31 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DocumentTreeNode } from "../api/types";
-import { containsDocument, moveDocumentOptimistically, removeDocument, renameDocument } from "./tree";
+import {
+  containsDocument,
+  moveDocumentOptimistically,
+  removeDocument,
+  renameDocument,
+} from "./tree";
 
-function node(id: string, children: DocumentTreeNode[] = [], parentId: string | null = null): DocumentTreeNode {
-  return { id, workspaceId: "workspace", parentId, title: id, sortKey: id, publicationState: "PRIVATE", archivedAt: null, deletedAt: null, createdAt: "now", updatedAt: "now", children };
+function node(
+  id: string,
+  children: DocumentTreeNode[] = [],
+  parentId: string | null = null,
+): DocumentTreeNode {
+  return {
+    id,
+    workspaceId: "workspace",
+    parentId,
+    title: id,
+    sortKey: id,
+    publicationState: "PRIVATE",
+    archivedAt: null,
+    deletedAt: null,
+    createdAt: "now",
+    updatedAt: "now",
+    children,
+  };
 }
 
 describe("optimistic document tree operations", () => {
@@ -17,8 +38,14 @@ describe("optimistic document tree operations", () => {
   });
 
   it("reorders siblings and nests documents", () => {
-    assert.deepEqual(moveDocumentOptimistically(tree, "c", null, "a")?.map(({ id }) => id), ["c", "a", "b"]);
-    assert.deepEqual(moveDocumentOptimistically(tree, "b", "a")?.[0]?.children.map(({ id }) => id), ["a1", "b"]);
+    assert.deepEqual(
+      moveDocumentOptimistically(tree, "c", null, "a")?.map(({ id }) => id),
+      ["c", "a", "b"],
+    );
+    assert.deepEqual(
+      moveDocumentOptimistically(tree, "b", "a")?.[0]?.children.map(({ id }) => id),
+      ["a1", "b"],
+    );
   });
 
   it("blocks self nesting and descendant cycles", () => {

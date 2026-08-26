@@ -8,7 +8,10 @@ import { JsonLogger } from "../../common/logging/json-logger.service";
 export class RedisService implements OnModuleInit, OnApplicationShutdown {
   readonly client: Redis;
 
-  constructor(config: ConfigService<AppEnvironment, true>, private readonly logger: JsonLogger) {
+  constructor(
+    config: ConfigService<AppEnvironment, true>,
+    private readonly logger: JsonLogger,
+  ) {
     this.client = new Redis(config.getOrThrow("REDIS_URL", { infer: true }), {
       enableReadyCheck: true,
       lazyConnect: true,

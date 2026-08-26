@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as Y from "yjs";
-import { InMemoryCollaborationPersistence, reconstructDocument, type PersistedDocumentState } from "./persistence.js";
+import {
+  InMemoryCollaborationPersistence,
+  reconstructDocument,
+  type PersistedDocumentState,
+} from "./persistence.js";
 import { deriveDocumentProjection } from "./projection.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -12,20 +16,31 @@ describe("durable Yjs state", () => {
     source.getText("content").insert(0, "snapshot");
     const snapshot = Y.encodeStateAsUpdate(source);
     let incremental: Uint8Array = new Uint8Array();
-    source.once("update", (update: Uint8Array) => { incremental = update; });
+    source.once("update", (update: Uint8Array) => {
+      incremental = update;
+    });
     source.getText("content").insert(8, "+update");
     const state: PersistedDocumentState = {
-      snapshot: { sequence: 4n, state: snapshot }, updates: [{ sequence: 5n, update: incremental }],
+      snapshot: { sequence: 4n, state: snapshot },
+      updates: [{ sequence: 5n, update: incremental }],
     };
     const recovered = reconstructDocument(state);
     assert.equal(recovered.getText("content").toString(), "snapshot+update");
   });
 
   it("treats duplicate update delivery as an idempotent success", async () => {
-    const persistence = new InMemoryCollaborationPersistence(); persistence.createDocument(documentId);
-    const document = new Y.Doc(); document.getText("content").insert(0, "once");
+    const persistence = new InMemoryCollaborationPersistence();
+    persistence.createDocument(documentId);
+    const document = new Y.Doc();
+    document.getText("content").insert(0, "once");
     const update = Y.encodeStateAsUpdate(document);
-    const input = { documentId, actorUserId: "user", update, document, projection: deriveDocumentProjection(document) };
+    const input = {
+      documentId,
+      actorUserId: "user",
+      update,
+      document,
+      projection: deriveDocumentProjection(document),
+    };
     const first = await persistence.storeUpdate(input);
     const duplicate = await persistence.storeUpdate(input);
     assert.deepEqual(first, { sequence: 1n, duplicate: false });
@@ -34,12 +49,25 @@ describe("durable Yjs state", () => {
   });
 
   it("makes a complete snapshot before removing covered updates", async () => {
-    const persistence = new InMemoryCollaborationPersistence(); persistence.createDocument(documentId);
+    const persistence = new InMemoryCollaborationPersistence();
+    persistence.createDocument(documentId);
     const document = new Y.Doc();
     let update = captureUpdate(document, () => document.getText("content").insert(0, "A"));
-    await persistence.storeUpdate({ documentId, actorUserId: "user", update, document, projection: deriveDocumentProjection(document) });
+    await persistence.storeUpdate({
+      documentId,
+      actorUserId: "user",
+      update,
+      document,
+      projection: deriveDocumentProjection(document),
+    });
     update = captureUpdate(document, () => document.getText("content").insert(1, "B"));
-    await persistence.storeUpdate({ documentId, actorUserId: "user", update, document, projection: deriveDocumentProjection(document) });
+    await persistence.storeUpdate({
+      documentId,
+      actorUserId: "user",
+      update,
+      document,
+      projection: deriveDocumentProjection(document),
+    });
     const compacted = await persistence.compact(documentId);
     const compactedState = await persistence.load(documentId);
     assert.deepEqual(compacted, { compacted: true, sequence: 2n, removedUpdates: 2 });
@@ -48,7 +76,13 @@ describe("durable Yjs state", () => {
     assert.equal(reconstructDocument(compactedState).getText("content").toString(), "AB");
 
     update = captureUpdate(document, () => document.getText("content").insert(2, "C"));
-    await persistence.storeUpdate({ documentId, actorUserId: "user", update, document, projection: deriveDocumentProjection(document) });
+    await persistence.storeUpdate({
+      documentId,
+      actorUserId: "user",
+      update,
+      document,
+      projection: deriveDocumentProjection(document),
+    });
     const cold = reconstructDocument(await persistence.load(documentId));
     assert.equal(cold.getText("content").toString(), "ABC");
   });
@@ -56,7 +90,13 @@ describe("durable Yjs state", () => {
   it("derives a normalized projection rather than client HTML", () => {
     const document = new Y.Doc();
     document.getArray("blocks").push([
-      { id: "heading-1", type: "heading", level: 2, text: "Safe heading", html: "<script>alert(1)</script>" },
+      {
+        id: "heading-1",
+        type: "heading",
+        level: 2,
+        text: "Safe heading",
+        html: "<script>alert(1)</script>",
+      },
       { id: "task-1", type: "task", text: "Ship it", checked: true },
     ]);
     const projection = deriveDocumentProjection(document);
@@ -68,7 +108,9 @@ describe("durable Yjs state", () => {
 
 function captureUpdate(document: Y.Doc, operation: () => void): Uint8Array {
   let captured: Uint8Array = new Uint8Array();
-  document.once("update", (update: Uint8Array) => { captured = update; });
+  document.once("update", (update: Uint8Array) => {
+    captured = update;
+  });
   operation();
   return captured;
 }

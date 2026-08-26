@@ -10,7 +10,8 @@ export class RegisterDto {
   @ApiProperty({ minLength: 12, format: "password" })
   @IsString()
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,128}$/, {
-    message: "password must be 12-128 characters and include upper-case, lower-case, and numeric characters",
+    message:
+      "password must be 12-128 characters and include upper-case, lower-case, and numeric characters",
   })
   password!: string;
 
