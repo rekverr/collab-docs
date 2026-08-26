@@ -24,6 +24,7 @@ import { useSession } from "../auth/session-provider";
 import { VersionHistory } from "./version-history";
 import { CommentPanel } from "./comment-panel";
 import { AttachmentImage } from "./attachment-image";
+import { ShareDialog } from "./share-dialog";
 
 interface CollaborativeEditorProps {
   documentId: string;
@@ -131,6 +132,7 @@ function CollaborativeEditorSession({
         documentId={documentId}
         onRestored={onReloadRequired}
         onComments={() => setCommentTarget(null)}
+        canManageSharing={role === "OWNER" || role === "ADMIN"}
       />
       {hasConnected ? (
         <EditorSurface
@@ -403,6 +405,7 @@ function EditorHeader({
   documentId,
   onRestored,
   onComments,
+  canManageSharing,
 }: Readonly<{
   connectionState: CollaborationConnectionState;
   provider: CollabWebSocketProvider;
@@ -410,9 +413,11 @@ function EditorHeader({
   documentId: string;
   onRestored(): void;
   onComments(): void;
+  canManageSharing: boolean;
 }>) {
   const [collaborators, setCollaborators] = useState<CollaborationUser[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
 
   useEffect(() => {
     const update = (): void => {
@@ -437,6 +442,15 @@ function EditorHeader({
         {readOnly && <span className="editor-mode">Viewer · read only</span>}
       </div>
       <div className="editor-header-actions">
+        {canManageSharing && (
+          <button
+            className="text-button history-trigger"
+            type="button"
+            onClick={() => setSharingOpen(true)}
+          >
+            Share
+          </button>
+        )}
         <button className="text-button history-trigger" type="button" onClick={onComments}>
           Comments
         </button>
@@ -471,6 +485,7 @@ function EditorHeader({
           onRestored={onRestored}
         />
       )}
+      {sharingOpen && <ShareDialog documentId={documentId} onClose={() => setSharingOpen(false)} />}
     </header>
   );
 }

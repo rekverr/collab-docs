@@ -40,6 +40,26 @@ class FakeAuthorizer implements CollaborationAuthorizer {
   }
 }
 
+class RevocableShareAuthorizer implements CollaborationAuthorizer {
+  active = true;
+
+  authorize(
+    token: string,
+    requestedDocumentId: string,
+    shareToken?: string,
+  ): Promise<CollaborationIdentity> {
+    if (
+      token !== "authenticated" ||
+      requestedDocumentId !== documentId ||
+      shareToken !== "editable-share-token" ||
+      !this.active
+    ) {
+      return Promise.reject(new AuthorizationFailure("permission", "denied"));
+    }
+    return Promise.resolve(editor);
+  }
+}
+
 class MemoryPersistence extends InMemoryCollaborationPersistence {
   constructor() {
     super();
@@ -70,6 +90,20 @@ async function start(
   return { server, url: `ws://127.0.0.1:${port}` };
 }
 
+async function startWithAuthorizer(
+  authorizer: CollaborationAuthorizer,
+): Promise<{ server: CollaborationServer; url: string }> {
+  const server = new CollaborationServer(
+    { port: 0, host: "127.0.0.1", authenticationTimeoutMs: 1000, authorizationRecheckMs: 0 },
+    authorizer,
+    new MemoryPersistence(),
+    silentLogger,
+  );
+  servers.push(server);
+  const port = await server.start();
+  return { server, url: `ws://127.0.0.1:${port}` };
+}
+
 async function connect(url: string): Promise<WebSocket> {
   const socket = new WebSocket(url);
   clients.push(socket);
@@ -77,8 +111,15 @@ async function connect(url: string): Promise<WebSocket> {
   return socket;
 }
 
-function authenticate(socket: WebSocket, token: string): void {
-  socket.send(JSON.stringify({ type: "auth", documentId, accessToken: token }));
+function authenticate(socket: WebSocket, token: string, shareToken?: string): void {
+  socket.send(
+    JSON.stringify({
+      type: "auth",
+      documentId,
+      accessToken: token,
+      ...(shareToken === undefined ? {} : { shareToken }),
+    }),
+  );
 }
 
 describe("authenticated Yjs collaboration", () => {
@@ -114,6 +155,21 @@ describe("authenticated Yjs collaboration", () => {
     socket.send(syncUpdateMessage(Y.encodeStateAsUpdate(clientDocument)));
     const code = await onceClose(socket);
     assert.equal(code, 4403);
+    assert.equal(server.metrics.rejectedWritesTotal, 1);
+  });
+
+  it("rejects the next write after an editable share token is revoked", async () => {
+    const authorizer = new RevocableShareAuthorizer();
+    const { server, url } = await startWithAuthorizer(authorizer);
+    const socket = await connect(url);
+    const initial = onceBinaryMessage(socket);
+    authenticate(socket, "authenticated", "editable-share-token");
+    await initial;
+    authorizer.active = false;
+    const source = new Y.Doc();
+    source.getText("content").insert(0, "revoked write");
+    socket.send(syncUpdateMessage(Y.encodeStateAsUpdate(source)));
+    assert.equal(await onceClose(socket), 4403);
     assert.equal(server.metrics.rejectedWritesTotal, 1);
   });
 

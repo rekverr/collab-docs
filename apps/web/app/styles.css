@@ -916,6 +916,82 @@ textarea {
   margin-left: 0.4rem;
   padding-left: 0.8rem;
 }
+.share-panel {
+  width: 31rem;
+}
+.share-feedback {
+  background: #edf5ee;
+  border: 1px solid #cbdccb;
+  border-radius: 0.45rem;
+  color: #345843;
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 0.65rem;
+}
+.share-section {
+  border-bottom: 1px solid #ebe7df;
+  display: grid;
+  gap: 0.7rem;
+  padding-bottom: 1rem;
+}
+.share-section:last-child {
+  border-bottom: 0;
+}
+.share-section p {
+  line-height: 1.5;
+  margin: 0.25rem 0 0;
+}
+.share-section label {
+  display: grid;
+  gap: 0.35rem;
+}
+.share-section input,
+.share-section select {
+  background: #fff;
+  border: 1px solid #d9d3ca;
+  border-radius: 0.4rem;
+  font: inherit;
+  min-height: 2.35rem;
+  padding: 0.45rem 0.55rem;
+}
+.copyable-link {
+  align-items: center;
+  display: flex;
+  gap: 0.4rem;
+}
+.copyable-link input {
+  flex: 1;
+  min-width: 0;
+}
+.share-link-list {
+  display: grid;
+  gap: 0.4rem;
+}
+.share-link-row {
+  align-items: center;
+  background: #faf9f6;
+  border: 1px solid #e4e0d8;
+  border-radius: 0.45rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.65rem;
+}
+.share-link-row > div {
+  display: flex;
+  gap: 0.45rem;
+}
+.share-link-row > div:first-child {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.share-link-row span {
+  color: #7a736a;
+  font-size: 0.68rem;
+}
+.share-link-row .text-button {
+  font-size: 0.68rem;
+}
 .history-preview-actions {
   align-items: center;
   display: flex;

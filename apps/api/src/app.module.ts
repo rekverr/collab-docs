@@ -16,6 +16,7 @@ import { VersionsModule } from "./versions/versions.module";
 import { CommentsModule } from "./comments/comments.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
+import { DocumentSharingModule } from "./document-sharing/document-sharing.module";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AttachmentsModule } from "./attachments/attachments.module";
     CommentsModule,
     NotificationsModule,
     AttachmentsModule,
+    DocumentSharingModule,
   ],
 })
 export class AppModule implements NestModule {

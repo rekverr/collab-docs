@@ -27,6 +27,7 @@ describe("workspace capability policy", () => {
     assert.equal(policy.hasCapability(WorkspaceRole.ADMIN, "document.publish"), true);
     assert.equal(policy.hasCapability(WorkspaceRole.ADMIN, "billing.manage"), false);
     assert.equal(policy.hasCapability(WorkspaceRole.EDITOR, "document.edit"), true);
+    assert.equal(policy.hasCapability(WorkspaceRole.EDITOR, "document.publish"), false);
     assert.equal(policy.hasCapability(WorkspaceRole.EDITOR, "document.delete"), false);
     assert.equal(policy.hasCapability(WorkspaceRole.VIEWER, "document.read"), true);
     assert.equal(policy.hasCapability(WorkspaceRole.VIEWER, "workspace.manage"), false);

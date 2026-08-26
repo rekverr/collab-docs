@@ -31,6 +31,7 @@ interface CollaborationProviderOptions {
   user: CollaborationUser;
   readOnly: boolean;
   getAccessToken(): Promise<string>;
+  shareToken?: string;
 }
 
 type StateListener = (state: CollaborationConnectionState) => void;
@@ -108,6 +109,7 @@ export class CollabWebSocketProvider {
           type: "auth",
           documentId: this.options.documentId,
           accessToken,
+          ...(this.options.shareToken === undefined ? {} : { shareToken: this.options.shareToken }),
         }),
       );
     } catch {

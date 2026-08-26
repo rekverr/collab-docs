@@ -29,10 +29,12 @@ interface AuthMessage {
   type: "auth";
   documentId: string;
   accessToken: string;
+  shareToken?: string;
 }
 interface ConnectionState {
   identity: CollaborationIdentity;
   accessToken: string;
+  shareToken?: string;
   room: CollaborationRoom;
   awarenessClientIds: Set<number>;
   recheckTimer?: NodeJS.Timeout;
@@ -198,7 +200,11 @@ export class CollaborationServer {
       return undefined;
     }
     try {
-      const identity = await this.authorizer.authorize(message.accessToken, message.documentId);
+      const identity = await this.authorizer.authorize(
+        message.accessToken,
+        message.documentId,
+        message.shareToken,
+      );
       if (socket.readyState !== WebSocket.OPEN) return undefined;
       const room = await this.getRoom(message.documentId);
       if (socket.readyState !== WebSocket.OPEN) {
@@ -208,6 +214,7 @@ export class CollaborationServer {
       const state: ConnectionState = {
         identity,
         accessToken: message.accessToken,
+        ...(message.shareToken === undefined ? {} : { shareToken: message.shareToken }),
         room,
         awarenessClientIds: new Set(),
       };
@@ -396,7 +403,11 @@ export class CollaborationServer {
   ): Promise<void> {
     if (state.room.failed || socket.readyState !== WebSocket.OPEN) return;
     try {
-      const current = await this.authorizer.authorize(state.accessToken, state.identity.documentId);
+      const current = await this.authorizer.authorize(
+        state.accessToken,
+        state.identity.documentId,
+        state.shareToken,
+      );
       if (current.userId !== state.identity.userId || !current.canWrite) {
         this.metrics.rejectedWritesTotal += 1;
         socket.close(4403, "Document write access revoked");
@@ -425,35 +436,47 @@ export class CollaborationServer {
         duplicate: stored.duplicate,
       });
     } catch (error: unknown) {
+      const authorizationFailure =
+        error instanceof AuthorizationFailure &&
+        (error.kind === "authentication" || error.kind === "permission");
+      if (authorizationFailure) {
+        this.metrics.rejectedWritesTotal += 1;
+        if (error.kind === "authentication") this.metrics.authFailuresTotal += 1;
+        else this.metrics.permissionFailuresTotal += 1;
+        this.logger.event("warn", "collab_permission_revoked", {
+          documentId: state.identity.documentId,
+        });
+        socket.close(
+          error.kind === "authentication" ? 4401 : 4403,
+          error.kind === "authentication" ? "Authentication expired" : "Document access revoked",
+        );
+        return;
+      }
+
       state.room.failed = true;
       const reloadRequired = error instanceof DocumentReloadRequiredError;
       const deleted = error instanceof DocumentUnavailableError;
       const unavailableDocument =
         error instanceof AuthorizationFailure && error.kind === "document";
-      const revoked = error instanceof AuthorizationFailure && error.kind === "permission";
-      if (deleted || unavailableDocument || revoked) this.metrics.permissionFailuresTotal += 1;
+      if (deleted || unavailableDocument) this.metrics.permissionFailuresTotal += 1;
       else if (!reloadRequired) this.metrics.persistenceFailuresTotal += 1;
       this.logger.event(
-        deleted || unavailableDocument || revoked || reloadRequired ? "warn" : "error",
+        deleted || unavailableDocument || reloadRequired ? "warn" : "error",
         deleted || unavailableDocument
           ? "collab_document_unavailable"
           : reloadRequired
             ? "collab_reload_required"
-            : revoked
-              ? "collab_permission_revoked"
-              : "collab_persistence_failure",
+            : "collab_persistence_failure",
         { documentId: state.identity.documentId },
       );
       for (const connection of state.room.connections.keys()) {
         connection.close(
-          deleted || unavailableDocument ? 4404 : reloadRequired ? 4410 : revoked ? 4403 : 1011,
+          deleted || unavailableDocument ? 4404 : reloadRequired ? 4410 : 1011,
           deleted || unavailableDocument
             ? "Document was deleted"
             : reloadRequired
               ? "Document restored; reconnect required"
-              : revoked
-                ? "Document access revoked"
-                : "Update was not saved; reconnect required",
+              : "Update was not saved; reconnect required",
         );
       }
     }
@@ -495,7 +518,7 @@ export class CollaborationServer {
     if (interval <= 0) return;
     state.recheckTimer = setInterval(() => {
       void this.authorizer
-        .authorize(state.accessToken, state.identity.documentId)
+        .authorize(state.accessToken, state.identity.documentId, state.shareToken)
         .then((identity) => {
           if (identity.userId !== state.identity.userId)
             socket.close(4403, "Document access revoked");
@@ -531,16 +554,23 @@ function parseAuthMessage(value: string): AuthMessage {
   const type: unknown = Reflect.get(parsed, "type");
   const documentId: unknown = Reflect.get(parsed, "documentId");
   const accessToken: unknown = Reflect.get(parsed, "accessToken");
+  const shareToken: unknown = Reflect.get(parsed, "shareToken");
   if (
     type !== "auth" ||
     typeof documentId !== "string" ||
     typeof accessToken !== "string" ||
+    (shareToken !== undefined && (typeof shareToken !== "string" || shareToken.length > 256)) ||
     documentId.length > 128 ||
     accessToken.length > 4096
   ) {
     throw new Error("invalid auth message");
   }
-  return { type, documentId, accessToken };
+  return {
+    type,
+    documentId,
+    accessToken,
+    ...(typeof shareToken === "string" ? { shareToken } : {}),
+  };
 }
 
 function rawData(data: RawData): Uint8Array {

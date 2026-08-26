@@ -19,7 +19,11 @@ export class AuthorizationFailure extends Error {
 }
 
 export interface CollaborationAuthorizer {
-  authorize(accessToken: string, documentId: string): Promise<CollaborationIdentity>;
+  authorize(
+    accessToken: string,
+    documentId: string,
+    shareToken?: string,
+  ): Promise<CollaborationIdentity>;
 }
 
 function field(value: object, key: string): unknown {
@@ -36,13 +40,20 @@ function stringField(value: object, key: string): string {
 export class ApiCollaborationAuthorizer implements CollaborationAuthorizer {
   constructor(private readonly internalApiUrl: string) {}
 
-  async authorize(accessToken: string, documentId: string): Promise<CollaborationIdentity> {
+  async authorize(
+    accessToken: string,
+    documentId: string,
+    shareToken?: string,
+  ): Promise<CollaborationIdentity> {
     let response: Response;
     try {
       response = await fetch(
         `${this.internalApiUrl}/internal/collaboration/documents/${encodeURIComponent(documentId)}/access`,
         {
-          headers: { authorization: `Bearer ${accessToken}` },
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            ...(shareToken === undefined ? {} : { "x-document-share-token": shareToken }),
+          },
           signal: AbortSignal.timeout(5000),
         },
       );

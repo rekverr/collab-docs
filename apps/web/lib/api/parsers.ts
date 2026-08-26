@@ -8,10 +8,13 @@ import type {
   CommentThread,
   CurrentUser,
   DocumentMetadata,
+  DocumentAccessMode,
   DocumentProjection,
   DocumentProjectionBlock,
   DocumentPublicationState,
   DocumentTreeNode,
+  DocumentShareLink,
+  DocumentSharingState,
   DocumentVersion,
   DocumentVersionPreview,
   DocumentComment,
@@ -377,5 +380,36 @@ export function parseAttachmentDownload(value: unknown): AttachmentDownload {
   return {
     url: string(field(data, "url"), "attachment download"),
     expiresAt: string(field(data, "expiresAt"), "attachment download"),
+  };
+}
+
+function parseDocumentAccessMode(value: unknown): DocumentAccessMode {
+  if (value !== "VIEW" && value !== "EDIT") throw new TypeError("Invalid share access mode");
+  return value;
+}
+
+export function parseDocumentShareLink(value: unknown): DocumentShareLink {
+  const data = record(value, "document share link");
+  return {
+    id: string(field(data, "id"), "document share link"),
+    accessMode: parseDocumentAccessMode(field(data, "accessMode")),
+    expiresAt: nullableString(field(data, "expiresAt"), "document share link"),
+    revokedAt: nullableString(field(data, "revokedAt"), "document share link"),
+    url: nullableString(field(data, "url"), "document share link"),
+    createdAt: string(field(data, "createdAt"), "document share link"),
+    updatedAt: string(field(data, "updatedAt"), "document share link"),
+  };
+}
+
+export function parseDocumentSharingState(value: unknown): DocumentSharingState {
+  const data = record(value, "document sharing state");
+  const links = field(data, "links");
+  if (!Array.isArray(links)) throw new TypeError("Invalid document share links");
+  return {
+    documentId: string(field(data, "documentId"), "document sharing state"),
+    published: boolean(field(data, "published"), "document sharing state"),
+    publicSlug: nullableString(field(data, "publicSlug"), "document sharing state"),
+    publicUrl: nullableString(field(data, "publicUrl"), "document sharing state"),
+    links: links.map(parseDocumentShareLink),
   };
 }

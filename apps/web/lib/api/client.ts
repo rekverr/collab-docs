@@ -7,6 +7,8 @@ import {
   parseCurrentUser,
   parseCommentThreads,
   parseDocument,
+  parseDocumentShareLink,
+  parseDocumentSharingState,
   parseDocumentComment,
   parseDocumentTree,
   parseDocumentVersion,
@@ -28,6 +30,9 @@ import type {
   CommentAuthor,
   CommentThread,
   DocumentMetadata,
+  DocumentAccessMode,
+  DocumentShareLink,
+  DocumentSharingState,
   DocumentComment,
   DocumentTreeNode,
   DocumentVersion,
@@ -296,5 +301,58 @@ export const attachmentApi = {
       method: "DELETE",
       headers: authorization(token),
     });
+  },
+};
+
+export const sharingApi = {
+  state(token: string, documentId: string): Promise<DocumentSharingState> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/sharing`,
+      parseDocumentSharingState,
+      { headers: authorization(token) },
+    );
+  },
+  setPublished(
+    token: string,
+    documentId: string,
+    published: boolean,
+  ): Promise<DocumentSharingState> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/publication`,
+      parseDocumentSharingState,
+      {
+        method: "POST",
+        headers: authorization(token),
+        body: JSON.stringify({ published }),
+      },
+    );
+  },
+  createLink(
+    token: string,
+    documentId: string,
+    input: { accessMode: DocumentAccessMode; expiresAt?: string },
+  ): Promise<DocumentShareLink> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/share-links`,
+      parseDocumentShareLink,
+      {
+        method: "POST",
+        headers: authorization(token),
+        body: JSON.stringify(input),
+      },
+    );
+  },
+  revokeLink(token: string, linkId: string): Promise<DocumentShareLink> {
+    return request(`/document-share-links/${encodeURIComponent(linkId)}`, parseDocumentShareLink, {
+      method: "DELETE",
+      headers: authorization(token),
+    });
+  },
+  regenerateLink(token: string, linkId: string): Promise<DocumentShareLink> {
+    return request(
+      `/document-share-links/${encodeURIComponent(linkId)}/regenerate`,
+      parseDocumentShareLink,
+      { method: "POST", headers: authorization(token) },
+    );
   },
 };

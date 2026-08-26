@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Headers, Param, ParseUUIDPipe, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -21,7 +21,8 @@ export class CollaborationAccessController {
   resolve(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
+    @Headers("x-document-share-token") shareToken?: string,
   ): Promise<CollaborationAccess> {
-    return this.access.resolve(user, documentId);
+    return this.access.resolve(user, documentId, shareToken);
   }
 }

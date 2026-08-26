@@ -22,6 +22,7 @@ export interface WorkspaceSummary {
 }
 
 export type DocumentPublicationState = "PRIVATE" | "PUBLISHED";
+export type DocumentAccessMode = "VIEW" | "EDIT";
 
 export interface DocumentMetadata {
   id: string;
@@ -146,6 +147,24 @@ export interface AttachmentUploadRequest {
 export interface AttachmentDownload {
   url: string;
   expiresAt: string;
+}
+
+export interface DocumentShareLink {
+  id: string;
+  accessMode: DocumentAccessMode;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  url: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentSharingState {
+  documentId: string;
+  published: boolean;
+  publicSlug: string | null;
+  publicUrl: string | null;
+  links: DocumentShareLink[];
 }
 
 export interface ApiErrorBody {
