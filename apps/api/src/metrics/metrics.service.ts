@@ -6,6 +6,7 @@ export class MetricsService {
   private readonly registry = new Registry();
   private readonly requestCount: Counter<"method" | "route" | "status_code">;
   private readonly requestDuration: Histogram<"method" | "route" | "status_code">;
+  private readonly publicRevalidationCount: Counter<"status">;
 
   constructor() {
     collectDefaultMetrics({ prefix: "collab_docs_api_", register: this.registry });
@@ -22,6 +23,16 @@ export class MetricsService {
       buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
       registers: [this.registry],
     });
+    this.publicRevalidationCount = new Counter({
+      name: "collab_docs_api_public_revalidation_jobs_total",
+      help: "Public document revalidation jobs by outcome",
+      labelNames: ["status"],
+      registers: [this.registry],
+    });
+  }
+
+  recordPublicRevalidation(status: string): void {
+    this.publicRevalidationCount.inc({ status });
   }
 
   observeHttpRequest(

@@ -17,6 +17,7 @@ import { CommentsModule } from "./comments/comments.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
 import { DocumentSharingModule } from "./document-sharing/document-sharing.module";
+import { PublicRevalidationModule } from "./public-revalidation/public-revalidation.module";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { DocumentSharingModule } from "./document-sharing/document-sharing.modul
     RedisModule,
     QueueModule,
     MetricsModule,
+    PublicRevalidationModule,
     HealthModule,
     AuthModule,
     PermissionsModule,

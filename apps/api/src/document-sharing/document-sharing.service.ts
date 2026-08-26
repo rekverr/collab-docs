@@ -11,6 +11,7 @@ import { ObjectStorageService } from "../attachments/object-storage.service";
 import type { AppEnvironment } from "../common/config/environment";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
+import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
 import type {
   CreateShareLinkDto,
   DocumentSharingStateDto,
@@ -38,6 +39,7 @@ export class DocumentSharingService {
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly storage: ObjectStorageService,
+    private readonly revalidation: PublicRevalidationService,
     config: ConfigService<AppEnvironment, true>,
   ) {
     this.webUrl = config.getOrThrow("WEB_URL", { infer: true }).replace(/\/$/, "");
@@ -82,6 +84,11 @@ export class DocumentSharingService {
       orderBy: { createdAt: "desc" },
       select: shareLinkSelect,
     });
+    await this.revalidation.enqueueBestEffort(
+      document.id,
+      document.updatedAt.getTime(),
+      published ? "published" : "unpublished",
+    );
     return this.mapState(document, links);
   }
 
@@ -300,6 +307,7 @@ const manageableDocumentSelect = {
   publicationState: true,
   publicSlug: true,
   publishedAt: true,
+  updatedAt: true,
 } satisfies Prisma.DocumentSelect;
 
 type ManageableDocument = Prisma.DocumentGetPayload<{ select: typeof manageableDocumentSelect }>;

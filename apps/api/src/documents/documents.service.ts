@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, UnprocessableEntityException } from "@ne
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
+import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
 import {
   appendedSortKey,
   assertExactSiblingOrder,
@@ -39,6 +40,7 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
+    private readonly revalidation: PublicRevalidationService,
   ) {}
 
   create(
@@ -207,11 +209,11 @@ export class DocumentsService {
     return this.setLifecycle(userId, documentId, "delete");
   }
 
-  restore(userId: string, documentId: string): Promise<DocumentMetadataDto> {
-    return this.prisma.$transaction(async (transaction) => {
+  async restore(userId: string, documentId: string): Promise<DocumentMetadataDto> {
+    const outcome = await this.prisma.$transaction(async (transaction) => {
       const document = await transaction.document.findUnique({
         where: { id: documentId },
-        select: metadataSelect,
+        select: { ...metadataSelect, publicSlug: true },
       });
       if (document === null) throw new NotFoundException("Document not found");
       await this.policy.requireWorkspaceCapability(
@@ -222,20 +224,30 @@ export class DocumentsService {
       );
       if (document.parentId !== null)
         await this.requireActiveParent(transaction, document.parentId, document.workspaceId);
-      return transaction.document.update({
+      const restored = await transaction.document.update({
         where: { id: documentId },
         data: { archivedAt: null, deletedAt: null, updatedById: userId },
-        select: metadataSelect,
+        select: { ...metadataSelect, publicSlug: true },
       });
+      const { publicSlug, ...metadata } = restored;
+      return { metadata, publicSlug };
     });
+    if (outcome.publicSlug !== null) {
+      await this.revalidation.enqueueBestEffort(
+        documentId,
+        outcome.metadata.updatedAt.getTime(),
+        "restored",
+      );
+    }
+    return outcome.metadata;
   }
 
-  private setLifecycle(
+  private async setLifecycle(
     userId: string,
     documentId: string,
     action: "archive" | "delete",
   ): Promise<DocumentMetadataDto> {
-    return this.prisma.$transaction(async (transaction) => {
+    const outcome = await this.prisma.$transaction(async (transaction) => {
       const document = await this.requireVisibleDocument(transaction, documentId);
       await this.policy.requireWorkspaceCapability(
         userId,
@@ -244,15 +256,25 @@ export class DocumentsService {
         transaction,
       );
       const now = new Date();
-      return transaction.document.update({
+      const changed = await transaction.document.update({
         where: { id: documentId },
         data:
           action === "archive"
             ? { archivedAt: now, updatedById: userId }
             : { deletedAt: now, updatedById: userId },
-        select: metadataSelect,
+        select: { ...metadataSelect, publicSlug: true },
       });
+      const { publicSlug, ...metadata } = changed;
+      return { metadata, publicSlug };
     });
+    if (outcome.publicSlug !== null) {
+      await this.revalidation.enqueueBestEffort(
+        documentId,
+        outcome.metadata.updatedAt.getTime(),
+        action === "archive" ? "archived" : "deleted",
+      );
+    }
+    return outcome.metadata;
   }
 
   private async requireVisibleDocument(

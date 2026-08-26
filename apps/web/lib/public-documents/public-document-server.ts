@@ -1,11 +1,10 @@
 import { cache } from "react";
 import { parsePublicDocument, type PublicDocument } from "./public-document";
+import { publicDocumentTag } from "./public-revalidation";
+
+export { publicDocumentTag } from "./public-revalidation";
 
 export const publicDocumentRevalidateSeconds = 300;
-
-export function publicDocumentTag(slug: string): string {
-  return `public-document:${slug}`;
-}
 
 export const getPublicDocument = cache(async (slug: string): Promise<PublicDocument | null> => {
   if (!/^[a-z0-9-]{1,160}$/.test(slug)) return null;

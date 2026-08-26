@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import type { DocumentProjection } from "./projection.js";
 
@@ -11,6 +11,22 @@ export interface ProjectionEvent {
 export interface ProjectionPublisher {
   publish(event: ProjectionEvent): Promise<void>;
   close?(): Promise<void>;
+}
+
+export interface ProjectionRevalidationJob {
+  data: { documentId: string; sequence: string };
+  options: JobsOptions;
+}
+
+export function createProjectionRevalidationJob(
+  event: ProjectionEvent,
+): ProjectionRevalidationJob | null {
+  if (!event.published) return null;
+  const sequence = event.sequence.toString();
+  return {
+    data: { documentId: event.documentId, sequence },
+    options: projectionJobOptions(event.documentId, sequence),
+  };
 }
 
 export class BullMqProjectionPublisher implements ProjectionPublisher {
@@ -29,30 +45,28 @@ export class BullMqProjectionPublisher implements ProjectionPublisher {
     await this.search.add(
       "index-document",
       { documentId: event.documentId, sequence },
-      {
-        jobId: `${event.documentId}-${sequence}`,
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: 1000,
-      },
+      projectionJobOptions(event.documentId, sequence),
     );
-    if (event.published)
-      await this.revalidation.add(
-        "revalidate-document",
-        { documentId: event.documentId, sequence },
-        {
-          jobId: `${event.documentId}-${sequence}`,
-          attempts: 5,
-          backoff: { type: "exponential", delay: 1000 },
-          removeOnComplete: 1000,
-        },
-      );
+    const revalidation = createProjectionRevalidationJob(event);
+    if (revalidation !== null) {
+      await this.revalidation.add("revalidate-document", revalidation.data, revalidation.options);
+    }
   }
 
   async close(): Promise<void> {
     await Promise.all([this.search.close(), this.revalidation.close()]);
     this.redis.disconnect();
   }
+}
+
+function projectionJobOptions(documentId: string, sequence: string): JobsOptions {
+  return {
+    jobId: `${documentId}-${sequence}`,
+    attempts: 5,
+    backoff: { type: "exponential", delay: 1_000 },
+    removeOnComplete: 1_000,
+    removeOnFail: 1_000,
+  };
 }
 
 export class NoopProjectionPublisher implements ProjectionPublisher {
