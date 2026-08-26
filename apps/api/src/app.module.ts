@@ -13,6 +13,8 @@ import { PermissionsModule } from "./permissions/permissions.module";
 import { WorkspacesModule } from "./workspaces/workspaces.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { VersionsModule } from "./versions/versions.module";
+import { CommentsModule } from "./comments/comments.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { VersionsModule } from "./versions/versions.module";
     WorkspacesModule,
     DocumentsModule,
     VersionsModule,
+    CommentsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule implements NestModule {

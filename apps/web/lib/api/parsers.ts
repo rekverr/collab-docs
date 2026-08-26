@@ -1,5 +1,7 @@
 import type {
   AuthResponse,
+  CommentAuthor,
+  CommentThread,
   CurrentUser,
   DocumentMetadata,
   DocumentProjection,
@@ -8,7 +10,10 @@ import type {
   DocumentTreeNode,
   DocumentVersion,
   DocumentVersionPreview,
+  DocumentComment,
+  NotificationType,
   RestoreDocumentVersionResult,
+  UserNotification,
   WorkspaceRole,
   WorkspaceSummary,
 } from "./types";
@@ -84,6 +89,11 @@ function isPublicationState(value: string): value is DocumentPublicationState {
 function nullableString(value: unknown, label: string): string | null {
   if (value === null) return null;
   return string(value, label);
+}
+
+function boolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new TypeError(`Invalid ${label} response`);
+  return value;
 }
 
 export function parseDocument(value: unknown): DocumentMetadata {
@@ -233,4 +243,82 @@ function parseProjectionBlock(value: unknown): DocumentProjectionBlock {
     return { id, type, source, alt: string(field(data, "alt"), "image block") };
   }
   throw new TypeError("Unsupported document projection block");
+}
+
+export function parseCommentAuthor(value: unknown): CommentAuthor {
+  const data = record(value, "comment author");
+  return {
+    id: string(field(data, "id"), "comment author"),
+    email: string(field(data, "email"), "comment author"),
+    displayName: nullableString(field(data, "displayName"), "comment author"),
+  };
+}
+
+export function parseDocumentComment(value: unknown): DocumentComment {
+  const data = record(value, "comment");
+  const resolvedBy = field(data, "resolvedBy");
+  return {
+    id: string(field(data, "id"), "comment"),
+    documentId: string(field(data, "documentId"), "comment"),
+    parentId: nullableString(field(data, "parentId"), "comment"),
+    blockId: nullableString(field(data, "blockId"), "comment"),
+    body: string(field(data, "body"), "comment"),
+    deleted: boolean(field(data, "deleted"), "comment"),
+    resolvedAt: nullableString(field(data, "resolvedAt"), "comment"),
+    resolvedBy: resolvedBy === null ? null : parseCommentAuthor(resolvedBy),
+    author: parseCommentAuthor(field(data, "author")),
+    createdAt: string(field(data, "createdAt"), "comment"),
+    updatedAt: string(field(data, "updatedAt"), "comment"),
+  };
+}
+
+export function parseCommentThreads(value: unknown): CommentThread[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid comment thread list response");
+  return value.map((entry) => {
+    const data = record(entry, "comment thread");
+    const replies = field(data, "replies");
+    if (!Array.isArray(replies)) throw new TypeError("Invalid comment replies response");
+    return { ...parseDocumentComment(data), replies: replies.map(parseDocumentComment) };
+  });
+}
+
+export function parseMentionCandidates(value: unknown): CommentAuthor[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid mention candidate list response");
+  return value.map(parseCommentAuthor);
+}
+
+const notificationTypes: ReadonlySet<string> = new Set([
+  "WORKSPACE_INVITATION",
+  "DOCUMENT_SHARED",
+  "COMMENT_REPLY",
+  "MENTION",
+  "COMMENT_RESOLVED",
+]);
+
+function isNotificationType(value: string): value is NotificationType {
+  return notificationTypes.has(value);
+}
+
+export function parseNotification(value: unknown): UserNotification {
+  const data = record(value, "notification");
+  const type = string(field(data, "type"), "notification");
+  if (!isNotificationType(type)) throw new TypeError("Invalid notification type");
+  const actor = field(data, "actor");
+  return {
+    id: string(field(data, "id"), "notification"),
+    type,
+    workspaceId: nullableString(field(data, "workspaceId"), "notification"),
+    workspaceName: nullableString(field(data, "workspaceName"), "notification"),
+    documentId: nullableString(field(data, "documentId"), "notification"),
+    documentTitle: nullableString(field(data, "documentTitle"), "notification"),
+    commentId: nullableString(field(data, "commentId"), "notification"),
+    actor: actor === null ? null : parseCommentAuthor(actor),
+    readAt: nullableString(field(data, "readAt"), "notification"),
+    createdAt: string(field(data, "createdAt"), "notification"),
+  };
+}
+
+export function parseNotifications(value: unknown): UserNotification[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid notification list response");
+  return value.map(parseNotification);
 }

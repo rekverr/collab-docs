@@ -5,6 +5,7 @@ import { CollaborationCaret } from "@tiptap/extension-collaboration-caret";
 import { Image } from "@tiptap/extension-image";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
+import { UniqueID } from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import {
 } from "../../lib/collaboration/collab-provider";
 import { useSession } from "../auth/session-provider";
 import { VersionHistory } from "./version-history";
+import { CommentPanel } from "./comment-panel";
 
 interface CollaborativeEditorProps {
   documentId: string;
@@ -82,6 +84,7 @@ function CollaborativeEditorSession({
     runtime.provider.getState(),
   );
   const [hasConnected, setHasConnected] = useState(false);
+  const [commentTarget, setCommentTarget] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     const unsubscribe = runtime.provider.subscribe((state) => {
@@ -125,14 +128,28 @@ function CollaborativeEditorSession({
         readOnly={readOnly}
         documentId={documentId}
         onRestored={onReloadRequired}
+        onComments={() => setCommentTarget(null)}
       />
       {hasConnected ? (
-        <EditorSurface runtime={runtime} readOnly={readOnly} connectionState={connectionState} />
+        <EditorSurface
+          runtime={runtime}
+          readOnly={readOnly}
+          connectionState={connectionState}
+          onCommentBlock={(blockId) => setCommentTarget(blockId)}
+        />
       ) : (
         <div className="editor-loading loading-row">
           <span className="spinner" aria-hidden="true" />
           Connecting to the document…
         </div>
+      )}
+      {commentTarget !== undefined && (
+        <CommentPanel
+          documentId={documentId}
+          blockId={commentTarget}
+          canEditDocument={!readOnly}
+          onClose={() => setCommentTarget(undefined)}
+        />
       )}
     </section>
   );
@@ -142,10 +159,12 @@ function EditorSurface({
   runtime,
   readOnly,
   connectionState,
+  onCommentBlock,
 }: Readonly<{
   runtime: EditorRuntime;
   readOnly: boolean;
   connectionState: CollaborationConnectionState;
+  onCommentBlock(blockId: string): void;
 }>) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -155,6 +174,18 @@ function EditorSurface({
       TaskList,
       TaskItem.configure({ nested: true }),
       Image.configure({ allowBase64: false }),
+      UniqueID.configure({
+        types: [
+          "paragraph",
+          "heading",
+          "bulletList",
+          "orderedList",
+          "taskItem",
+          "image",
+          "codeBlock",
+        ],
+        updateDocument: !readOnly,
+      }),
       Collaboration.configure({ document: runtime.document, field: "prosemirror" }),
       CollaborationCaret.configure({
         provider: runtime.provider,
@@ -184,13 +215,32 @@ function EditorSurface({
     editor?.chain().focus().setImage({ src: source, alt: "" }).run();
   }
 
+  function commentOnSelectedBlock(): void {
+    if (editor === null) return;
+    const blockId = selectedBlockId(editor);
+    if (blockId === null) {
+      window.alert("Place the cursor inside a saved content block first.");
+      return;
+    }
+    onCommentBlock(blockId);
+  }
+
   return (
     <>
-      {!readOnly && <EditorToolbar editor={editor} onAddImage={addImage} />}
+      {!readOnly && (
+        <EditorToolbar
+          editor={editor}
+          onAddImage={addImage}
+          onCommentBlock={commentOnSelectedBlock}
+        />
+      )}
       {readOnly && (
-        <p className="editor-readonly-note">
-          You can read this document, but your role cannot edit it.
-        </p>
+        <div className="editor-readonly-note">
+          <span>You can read this document, but your role cannot edit it.</span>
+          <button className="text-button" type="button" onClick={commentOnSelectedBlock}>
+            Comment selected block
+          </button>
+        </div>
       )}
       <EditorContent editor={editor} className="editor-content" />
     </>
@@ -200,9 +250,11 @@ function EditorSurface({
 function EditorToolbar({
   editor,
   onAddImage,
+  onCommentBlock,
 }: Readonly<{
   editor: Editor | null;
   onAddImage(): void;
+  onCommentBlock(): void;
 }>) {
   const unavailable = editor === null;
   return (
@@ -259,6 +311,9 @@ function EditorToolbar({
       <button disabled={unavailable} type="button" onClick={onAddImage}>
         Image
       </button>
+      <button disabled={unavailable} type="button" onClick={onCommentBlock}>
+        Comment block
+      </button>
     </div>
   );
 }
@@ -269,12 +324,14 @@ function EditorHeader({
   readOnly,
   documentId,
   onRestored,
+  onComments,
 }: Readonly<{
   connectionState: CollaborationConnectionState;
   provider: CollabWebSocketProvider;
   readOnly: boolean;
   documentId: string;
   onRestored(): void;
+  onComments(): void;
 }>) {
   const [collaborators, setCollaborators] = useState<CollaborationUser[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -302,6 +359,9 @@ function EditorHeader({
         {readOnly && <span className="editor-mode">Viewer · read only</span>}
       </div>
       <div className="editor-header-actions">
+        <button className="text-button history-trigger" type="button" onClick={onComments}>
+          Comments
+        </button>
         <button
           className="text-button history-trigger"
           type="button"
@@ -335,6 +395,15 @@ function EditorHeader({
       )}
     </header>
   );
+}
+
+function selectedBlockId(editor: Editor): string | null {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const id: unknown = $from.node(depth).attrs.id;
+    if (typeof id === "string" && id !== "") return id;
+  }
+  return null;
 }
 
 function TerminalEditorState({ title, message }: Readonly<{ title: string; message: string }>) {

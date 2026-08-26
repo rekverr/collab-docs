@@ -84,6 +84,46 @@ export interface RestoreDocumentVersionResult {
   collaborationReloadRequested: boolean;
 }
 
+export interface CommentAuthor {
+  id: string;
+  email: string;
+  displayName: string | null;
+}
+
+export interface DocumentComment {
+  id: string;
+  documentId: string;
+  parentId: string | null;
+  blockId: string | null;
+  body: string;
+  deleted: boolean;
+  resolvedAt: string | null;
+  resolvedBy: CommentAuthor | null;
+  author: CommentAuthor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommentThread extends DocumentComment {
+  replies: DocumentComment[];
+}
+
+export type NotificationType =
+  "WORKSPACE_INVITATION" | "DOCUMENT_SHARED" | "COMMENT_REPLY" | "MENTION" | "COMMENT_RESOLVED";
+
+export interface UserNotification {
+  id: string;
+  type: NotificationType;
+  workspaceId: string | null;
+  workspaceName: string | null;
+  documentId: string | null;
+  documentTitle: string | null;
+  commentId: string | null;
+  actor: CommentAuthor | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   code: string;

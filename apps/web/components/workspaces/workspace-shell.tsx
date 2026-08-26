@@ -6,6 +6,7 @@ import { useSession } from "../auth/session-provider";
 import { workspaceApi } from "../../lib/api/client";
 import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceSummary } from "../../lib/api/types";
+import { NotificationCenter } from "../notifications/notification-center";
 
 export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) {
   const session = useSession();
@@ -60,9 +61,12 @@ export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) 
             <strong>{session.user.displayName ?? session.user.email}</strong>
             <span className="header-email">{session.user.email}</span>
           </div>
-          <button className="text-button" type="button" onClick={() => void session.logout()}>
-            Log out
-          </button>
+          <div className="app-header-actions">
+            <NotificationCenter />
+            <button className="text-button" type="button" onClick={() => void session.logout()}>
+              Log out
+            </button>
+          </div>
         </header>
         {children}
       </div>

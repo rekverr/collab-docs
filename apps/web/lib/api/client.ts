@@ -2,23 +2,32 @@ import { ApiError, isApiErrorBody } from "./errors";
 import {
   parseAuthResponse,
   parseCurrentUser,
+  parseCommentThreads,
   parseDocument,
+  parseDocumentComment,
   parseDocumentTree,
   parseDocumentVersion,
   parseDocumentVersionPreview,
   parseDocumentVersions,
   parseRestoreDocumentVersionResult,
+  parseMentionCandidates,
+  parseNotification,
+  parseNotifications,
   parseWorkspace,
   parseWorkspaces,
 } from "./parsers";
 import type {
   AuthResponse,
   CurrentUser,
+  CommentAuthor,
+  CommentThread,
   DocumentMetadata,
+  DocumentComment,
   DocumentTreeNode,
   DocumentVersion,
   DocumentVersionPreview,
   RestoreDocumentVersionResult,
+  UserNotification,
   WorkspaceSummary,
 } from "./types";
 
@@ -179,5 +188,70 @@ export const versionApi = {
       parseRestoreDocumentVersionResult,
       { method: "POST", headers: authorization(token) },
     );
+  },
+};
+
+export const commentApi = {
+  list(token: string, documentId: string): Promise<CommentThread[]> {
+    return request(`/documents/${encodeURIComponent(documentId)}/comments`, parseCommentThreads, {
+      headers: authorization(token),
+    });
+  },
+  mentionCandidates(token: string, documentId: string): Promise<CommentAuthor[]> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/comment-mention-candidates`,
+      parseMentionCandidates,
+      { headers: authorization(token) },
+    );
+  },
+  create(
+    token: string,
+    documentId: string,
+    input: { body: string; blockId?: string },
+  ): Promise<DocumentComment> {
+    return request(`/documents/${encodeURIComponent(documentId)}/comments`, parseDocumentComment, {
+      method: "POST",
+      headers: authorization(token),
+      body: JSON.stringify(input),
+    });
+  },
+  reply(token: string, commentId: string, body: string): Promise<DocumentComment> {
+    return request(`/comments/${encodeURIComponent(commentId)}/replies`, parseDocumentComment, {
+      method: "POST",
+      headers: authorization(token),
+      body: JSON.stringify({ body }),
+    });
+  },
+  edit(token: string, commentId: string, body: string): Promise<DocumentComment> {
+    return request(`/comments/${encodeURIComponent(commentId)}`, parseDocumentComment, {
+      method: "PATCH",
+      headers: authorization(token),
+      body: JSON.stringify({ body }),
+    });
+  },
+  delete(token: string, commentId: string): Promise<void> {
+    return request(`/comments/${encodeURIComponent(commentId)}`, nothing, {
+      method: "DELETE",
+      headers: authorization(token),
+    });
+  },
+  setResolved(token: string, commentId: string, resolved: boolean): Promise<DocumentComment> {
+    return request(`/comments/${encodeURIComponent(commentId)}/resolution`, parseDocumentComment, {
+      method: "PATCH",
+      headers: authorization(token),
+      body: JSON.stringify({ resolved }),
+    });
+  },
+};
+
+export const notificationApi = {
+  list(token: string): Promise<UserNotification[]> {
+    return request("/notifications", parseNotifications, { headers: authorization(token) });
+  },
+  markRead(token: string, notificationId: string): Promise<UserNotification> {
+    return request(`/notifications/${encodeURIComponent(notificationId)}/read`, parseNotification, {
+      method: "PATCH",
+      headers: authorization(token),
+    });
   },
 };

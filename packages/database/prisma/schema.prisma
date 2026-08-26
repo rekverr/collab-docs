@@ -325,6 +325,7 @@ model Comment {
   parentId     String?   @db.Uuid
   blockId      String?   @db.VarChar(160)
   body         String    @db.Text
+  deletedAt    DateTime?
   resolvedAt   DateTime?
   resolvedById String?   @db.Uuid
   createdAt    DateTime  @default(now())
@@ -339,6 +340,7 @@ model Comment {
 
   @@unique([id, documentId])
   @@index([documentId, parentId, createdAt])
+  @@index([documentId, blockId, resolvedAt])
   @@index([authorId])
 }
 
@@ -360,6 +362,7 @@ model Notification {
   document  Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
   comment   Comment?   @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
+  @@unique([commentId, recipientId, type])
   @@index([recipientId, readAt, createdAt(sort: Desc)])
   @@index([workspaceId])
   @@index([documentId])
