@@ -2,7 +2,6 @@
 
 import { Collaboration } from "@tiptap/extension-collaboration";
 import { CollaborationCaret } from "@tiptap/extension-collaboration-caret";
-import { Image } from "@tiptap/extension-image";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
 import { UniqueID } from "@tiptap/extension-unique-id";
@@ -10,7 +9,9 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
-import { authApi } from "../../lib/api/client";
+import { attachmentApi, authApi } from "../../lib/api/client";
+import { uploadDirectly } from "../../lib/attachments/direct-upload";
+import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceRole } from "../../lib/api/types";
 import {
   CollabWebSocketProvider,
@@ -22,6 +23,7 @@ import {
 import { useSession } from "../auth/session-provider";
 import { VersionHistory } from "./version-history";
 import { CommentPanel } from "./comment-panel";
+import { AttachmentImage } from "./attachment-image";
 
 interface CollaborativeEditorProps {
   documentId: string;
@@ -132,6 +134,7 @@ function CollaborativeEditorSession({
       />
       {hasConnected ? (
         <EditorSurface
+          documentId={documentId}
           runtime={runtime}
           readOnly={readOnly}
           connectionState={connectionState}
@@ -156,16 +159,22 @@ function CollaborativeEditorSession({
 }
 
 function EditorSurface({
+  documentId,
   runtime,
   readOnly,
   connectionState,
   onCommentBlock,
 }: Readonly<{
+  documentId: string;
   runtime: EditorRuntime;
   readOnly: boolean;
   connectionState: CollaborationConnectionState;
   onCommentBlock(blockId: string): void;
 }>) {
+  const session = useSession();
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const editor = useEditor({
     immediatelyRender: false,
     editable: !readOnly && connectionState === "connected",
@@ -173,7 +182,7 @@ function EditorSurface({
       StarterKit.configure({ undoRedo: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Image.configure({ allowBase64: false }),
+      AttachmentImage.configure({ allowBase64: false }),
       UniqueID.configure({
         types: [
           "paragraph",
@@ -215,6 +224,45 @@ function EditorSurface({
     editor?.chain().focus().setImage({ src: source, alt: "" }).run();
   }
 
+  async function uploadImage(file: File): Promise<void> {
+    setUploadProgress(0);
+    setUploadError(null);
+    let attachmentId: string | null = null;
+    try {
+      const upload = await session.withAccessToken((token) =>
+        attachmentApi.requestUpload(token, documentId, {
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+        }),
+      );
+      attachmentId = upload.attachment.id;
+      await uploadDirectly(upload.uploadUrl, upload.requiredHeaders, file, setUploadProgress);
+      const attachment = await session.withAccessToken((token) =>
+        attachmentApi.finalize(token, upload.attachment.id),
+      );
+      editor
+        ?.chain()
+        .focus()
+        .insertContent({
+          type: "image",
+          attrs: { src: "", attachmentId: attachment.id, alt: attachment.fileName },
+        })
+        .run();
+    } catch (reason: unknown) {
+      setUploadError(apiErrorMessage(reason));
+      if (attachmentId !== null) {
+        const failedAttachmentId = attachmentId;
+        await session
+          .withAccessToken((token) => attachmentApi.delete(token, failedAttachmentId))
+          .catch(() => undefined);
+      }
+    } finally {
+      setUploadProgress(null);
+      if (uploadInput.current !== null) uploadInput.current.value = "";
+    }
+  }
+
   function commentOnSelectedBlock(): void {
     if (editor === null) return;
     const blockId = selectedBlockId(editor);
@@ -231,8 +279,31 @@ function EditorSurface({
         <EditorToolbar
           editor={editor}
           onAddImage={addImage}
+          onUploadImage={() => uploadInput.current?.click()}
+          uploading={uploadProgress !== null}
           onCommentBlock={commentOnSelectedBlock}
         />
+      )}
+      <input
+        ref={uploadInput}
+        className="visually-hidden"
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file !== undefined) void uploadImage(file);
+        }}
+      />
+      {uploadProgress !== null && (
+        <div className="attachment-upload-state" role="status">
+          Uploading image… {uploadProgress}%
+          <progress max={100} value={uploadProgress} />
+        </div>
+      )}
+      {uploadError !== null && (
+        <p className="attachment-upload-state error-message" role="alert">
+          {uploadError}
+        </p>
       )}
       {readOnly && (
         <div className="editor-readonly-note">
@@ -250,10 +321,14 @@ function EditorSurface({
 function EditorToolbar({
   editor,
   onAddImage,
+  onUploadImage,
+  uploading,
   onCommentBlock,
 }: Readonly<{
   editor: Editor | null;
   onAddImage(): void;
+  onUploadImage(): void;
+  uploading: boolean;
   onCommentBlock(): void;
 }>) {
   const unavailable = editor === null;
@@ -308,8 +383,11 @@ function EditorToolbar({
       >
         Code
       </button>
+      <button disabled={unavailable || uploading} type="button" onClick={onUploadImage}>
+        {uploading ? "Uploading…" : "Upload image"}
+      </button>
       <button disabled={unavailable} type="button" onClick={onAddImage}>
-        Image
+        Image URL
       </button>
       <button disabled={unavailable} type="button" onClick={onCommentBlock}>
         Comment block

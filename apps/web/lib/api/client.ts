@@ -1,5 +1,8 @@
 import { ApiError, isApiErrorBody } from "./errors";
 import {
+  parseAttachment,
+  parseAttachmentDownload,
+  parseAttachmentUpload,
   parseAuthResponse,
   parseCurrentUser,
   parseCommentThreads,
@@ -17,6 +20,9 @@ import {
   parseWorkspaces,
 } from "./parsers";
 import type {
+  Attachment,
+  AttachmentDownload,
+  AttachmentUploadRequest,
   AuthResponse,
   CurrentUser,
   CommentAuthor,
@@ -251,6 +257,43 @@ export const notificationApi = {
   markRead(token: string, notificationId: string): Promise<UserNotification> {
     return request(`/notifications/${encodeURIComponent(notificationId)}/read`, parseNotification, {
       method: "PATCH",
+      headers: authorization(token),
+    });
+  },
+};
+
+export const attachmentApi = {
+  requestUpload(
+    token: string,
+    documentId: string,
+    input: { fileName: string; mimeType: string; sizeBytes: number },
+  ): Promise<AttachmentUploadRequest> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/attachments/upload-requests`,
+      parseAttachmentUpload,
+      {
+        method: "POST",
+        headers: authorization(token),
+        body: JSON.stringify(input),
+      },
+    );
+  },
+  finalize(token: string, attachmentId: string): Promise<Attachment> {
+    return request(`/attachments/${encodeURIComponent(attachmentId)}/finalize`, parseAttachment, {
+      method: "POST",
+      headers: authorization(token),
+    });
+  },
+  download(token: string, attachmentId: string): Promise<AttachmentDownload> {
+    return request(
+      `/attachments/${encodeURIComponent(attachmentId)}/download`,
+      parseAttachmentDownload,
+      { headers: authorization(token) },
+    );
+  },
+  delete(token: string, attachmentId: string): Promise<void> {
+    return request(`/attachments/${encodeURIComponent(attachmentId)}`, nothing, {
+      method: "DELETE",
       headers: authorization(token),
     });
   },

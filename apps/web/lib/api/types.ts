@@ -124,6 +124,30 @@ export interface UserNotification {
   createdAt: string;
 }
 
+export type AttachmentStatus = "PENDING" | "READY" | "DELETED";
+
+export interface Attachment {
+  id: string;
+  documentId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: AttachmentStatus;
+  createdAt: string;
+}
+
+export interface AttachmentUploadRequest {
+  attachment: Attachment;
+  uploadUrl: string;
+  expiresAt: string;
+  requiredHeaders: Record<string, string>;
+}
+
+export interface AttachmentDownload {
+  url: string;
+  expiresAt: string;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   code: string;

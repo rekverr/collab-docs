@@ -1,4 +1,8 @@
 import type {
+  Attachment,
+  AttachmentDownload,
+  AttachmentStatus,
+  AttachmentUploadRequest,
   AuthResponse,
   CommentAuthor,
   CommentThread,
@@ -93,6 +97,13 @@ function nullableString(value: unknown, label: string): string | null {
 
 function boolean(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") throw new TypeError(`Invalid ${label} response`);
+  return value;
+}
+
+function number(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TypeError(`Invalid ${label} response`);
+  }
   return value;
 }
 
@@ -321,4 +332,50 @@ export function parseNotification(value: unknown): UserNotification {
 export function parseNotifications(value: unknown): UserNotification[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid notification list response");
   return value.map(parseNotification);
+}
+
+const attachmentStatuses: ReadonlySet<string> = new Set(["PENDING", "READY", "DELETED"]);
+
+function isAttachmentStatus(value: string): value is AttachmentStatus {
+  return attachmentStatuses.has(value);
+}
+
+export function parseAttachment(value: unknown): Attachment {
+  const data = record(value, "attachment");
+  const status = string(field(data, "status"), "attachment");
+  if (!isAttachmentStatus(status)) throw new TypeError("Invalid attachment status");
+  return {
+    id: string(field(data, "id"), "attachment"),
+    documentId: string(field(data, "documentId"), "attachment"),
+    fileName: string(field(data, "fileName"), "attachment"),
+    mimeType: string(field(data, "mimeType"), "attachment"),
+    sizeBytes: number(field(data, "sizeBytes"), "attachment"),
+    status,
+    createdAt: string(field(data, "createdAt"), "attachment"),
+  };
+}
+
+export function parseAttachmentUpload(value: unknown): AttachmentUploadRequest {
+  const data = record(value, "attachment upload");
+  const headersData = record(field(data, "requiredHeaders"), "attachment upload headers");
+  const requiredHeaders = Object.fromEntries(
+    Object.entries(headersData).map(([key, headerValue]) => [
+      key,
+      string(headerValue, "attachment upload header"),
+    ]),
+  );
+  return {
+    attachment: parseAttachment(field(data, "attachment")),
+    uploadUrl: string(field(data, "uploadUrl"), "attachment upload"),
+    expiresAt: string(field(data, "expiresAt"), "attachment upload"),
+    requiredHeaders,
+  };
+}
+
+export function parseAttachmentDownload(value: unknown): AttachmentDownload {
+  const data = record(value, "attachment download");
+  return {
+    url: string(field(data, "url"), "attachment download"),
+    expiresAt: string(field(data, "expiresAt"), "attachment download"),
+  };
 }

@@ -54,6 +54,9 @@ export class AppEnvironment {
   @IsUrl(httpUrlOptions)
   S3_ENDPOINT!: string;
 
+  @IsUrl(httpUrlOptions)
+  S3_PUBLIC_ENDPOINT!: string;
+
   @IsString()
   @Length(3, 255)
   S3_ACCESS_KEY!: string;
@@ -90,7 +93,12 @@ export class AppEnvironment {
 export function validateEnvironment(values: Record<string, unknown>): AppEnvironment {
   const environment = plainToInstance(
     AppEnvironment,
-    { NODE_ENV: RuntimeEnvironment.Development, API_PORT: 3001, ...values },
+    {
+      NODE_ENV: RuntimeEnvironment.Development,
+      API_PORT: 3001,
+      ...values,
+      S3_PUBLIC_ENDPOINT: values.S3_PUBLIC_ENDPOINT ?? values.S3_ENDPOINT,
+    },
     { enableImplicitConversion: true },
   );
   const errors = validateSync(environment, {

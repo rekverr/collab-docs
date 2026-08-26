@@ -88,6 +88,7 @@ function fixture(): AuthService {
     JWT_ACCESS_TTL: "15m",
     JWT_REFRESH_TTL: "30d",
     S3_ENDPOINT: "http://localhost:9000",
+    S3_PUBLIC_ENDPOINT: "http://localhost:9000",
     S3_ACCESS_KEY: "test",
     S3_SECRET_KEY: "test-secret",
     S3_BUCKET: "test-bucket",

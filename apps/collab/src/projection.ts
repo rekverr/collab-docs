@@ -99,6 +99,17 @@ function normalizeProseMirrorNode(
       });
   }
   if (nodeName === "image") {
+    const attachmentId = cleanIdentifier(node.getAttribute("attachmentId"), "");
+    if (attachmentId !== "") {
+      return [
+        {
+          id,
+          type: "image",
+          source: { kind: "attachment", attachmentId },
+          alt: cleanText(node.getAttribute("alt"), 500),
+        },
+      ];
+    }
     const source = cleanImageUrl(node.getAttribute("src"));
     if (source === null) return [];
     return [
