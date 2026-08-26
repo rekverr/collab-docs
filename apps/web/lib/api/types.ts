@@ -21,6 +21,25 @@ export interface WorkspaceSummary {
   updatedAt: string;
 }
 
+export type DocumentPublicationState = "PRIVATE" | "PUBLISHED";
+
+export interface DocumentMetadata {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  title: string;
+  sortKey: string;
+  publicationState: DocumentPublicationState;
+  archivedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentTreeNode extends DocumentMetadata {
+  children: DocumentTreeNode[];
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   code: string;

@@ -1,6 +1,6 @@
 import { ApiError, isApiErrorBody } from "./errors";
-import { parseAuthResponse, parseCurrentUser, parseWorkspace, parseWorkspaces } from "./parsers";
-import type { AuthResponse, CurrentUser, WorkspaceSummary } from "./types";
+import { parseAuthResponse, parseCurrentUser, parseDocument, parseDocumentTree, parseWorkspace, parseWorkspaces } from "./parsers";
+import type { AuthResponse, CurrentUser, DocumentMetadata, DocumentTreeNode, WorkspaceSummary } from "./types";
 
 const apiBase = "/api/backend";
 
@@ -42,5 +42,26 @@ export const workspaceApi = {
   },
   create(token: string, input: { name: string; slug: string }): Promise<WorkspaceSummary> {
     return request("/workspaces", parseWorkspace, { method: "POST", headers: authorization(token), body: JSON.stringify(input) });
+  },
+};
+
+export const documentApi = {
+  tree(token: string, workspaceId: string): Promise<DocumentTreeNode[]> {
+    return request(`/workspaces/${encodeURIComponent(workspaceId)}/documents/tree`, parseDocumentTree, { headers: authorization(token) });
+  },
+  create(token: string, workspaceId: string, input: { title: string; parentId?: string }): Promise<DocumentMetadata> {
+    return request(`/workspaces/${encodeURIComponent(workspaceId)}/documents`, parseDocument, { method: "POST", headers: authorization(token), body: JSON.stringify(input) });
+  },
+  rename(token: string, documentId: string, title: string): Promise<DocumentMetadata> {
+    return request(`/documents/${encodeURIComponent(documentId)}`, parseDocument, { method: "PATCH", headers: authorization(token), body: JSON.stringify({ title }) });
+  },
+  move(token: string, documentId: string, input: { parentId: string | null; beforeDocumentId?: string }): Promise<DocumentMetadata> {
+    return request(`/documents/${encodeURIComponent(documentId)}/move`, parseDocument, { method: "POST", headers: authorization(token), body: JSON.stringify(input) });
+  },
+  archive(token: string, documentId: string): Promise<DocumentMetadata> {
+    return request(`/documents/${encodeURIComponent(documentId)}/archive`, parseDocument, { method: "POST", headers: authorization(token) });
+  },
+  delete(token: string, documentId: string): Promise<DocumentMetadata> {
+    return request(`/documents/${encodeURIComponent(documentId)}`, parseDocument, { method: "DELETE", headers: authorization(token) });
   },
 };

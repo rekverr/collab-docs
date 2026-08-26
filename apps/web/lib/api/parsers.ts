@@ -1,4 +1,4 @@
-import type { AuthResponse, CurrentUser, WorkspaceRole, WorkspaceSummary } from "./types";
+import type { AuthResponse, CurrentUser, DocumentMetadata, DocumentPublicationState, DocumentTreeNode, WorkspaceRole, WorkspaceSummary } from "./types";
 
 function record(value: unknown, label: string): object {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError(`Invalid ${label} response`);
@@ -45,4 +45,39 @@ export function parseWorkspace(value: unknown): WorkspaceSummary {
 export function parseWorkspaces(value: unknown): WorkspaceSummary[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid workspace list response");
   return value.map(parseWorkspace);
+}
+
+const publicationStates: ReadonlySet<string> = new Set(["PRIVATE", "PUBLISHED"]);
+
+function isPublicationState(value: string): value is DocumentPublicationState { return publicationStates.has(value); }
+
+function nullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return string(value, label);
+}
+
+export function parseDocument(value: unknown): DocumentMetadata {
+  const data = record(value, "document");
+  const publicationState = string(field(data, "publicationState"), "document");
+  if (!isPublicationState(publicationState)) throw new TypeError("Invalid document response");
+  return {
+    id: string(field(data, "id"), "document"), workspaceId: string(field(data, "workspaceId"), "document"),
+    parentId: nullableString(field(data, "parentId"), "document"), title: string(field(data, "title"), "document"),
+    sortKey: string(field(data, "sortKey"), "document"), publicationState,
+    archivedAt: nullableString(field(data, "archivedAt"), "document"), deletedAt: nullableString(field(data, "deletedAt"), "document"),
+    createdAt: string(field(data, "createdAt"), "document"), updatedAt: string(field(data, "updatedAt"), "document"),
+  };
+}
+
+export function parseDocumentTreeNode(value: unknown): DocumentTreeNode {
+  const data = record(value, "document tree");
+  const metadata = parseDocument(data);
+  const children = field(data, "children");
+  if (!Array.isArray(children)) throw new TypeError("Invalid document tree response");
+  return { ...metadata, children: children.map(parseDocumentTreeNode) };
+}
+
+export function parseDocumentTree(value: unknown): DocumentTreeNode[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid document tree response");
+  return value.map(parseDocumentTreeNode);
 }

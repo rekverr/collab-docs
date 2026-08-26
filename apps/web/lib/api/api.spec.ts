@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ApiError, apiErrorMessage, isApiErrorBody } from "./errors";
-import { parseAuthResponse, parseWorkspaces } from "./parsers";
+import { parseAuthResponse, parseDocumentTree, parseWorkspaces } from "./parsers";
 
 describe("frontend API boundary", () => {
   it("parses typed authentication and workspace responses", () => {
@@ -14,6 +14,12 @@ describe("frontend API boundary", () => {
   it("rejects malformed API data instead of trusting compile-time types", () => {
     assert.throws(() => parseAuthResponse({ accessToken: 123, user: null }), TypeError);
     assert.throws(() => parseWorkspaces([{ role: "SUPERUSER" }]), TypeError);
+  });
+
+  it("parses nested document trees recursively", () => {
+    const base = { workspaceId: "workspace-1", title: "Page", sortKey: "1", publicationState: "PRIVATE", archivedAt: null, deletedAt: null, createdAt: "now", updatedAt: "now" };
+    const tree = parseDocumentTree([{ ...base, id: "root", parentId: null, children: [{ ...base, id: "child", parentId: "root", children: [] }] }]);
+    assert.equal(tree[0]?.children[0]?.id, "child");
   });
 
   it("recognizes and maps centralized API errors", () => {
