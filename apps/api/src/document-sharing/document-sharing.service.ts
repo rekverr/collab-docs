@@ -1,7 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { DocumentAccessMode, DocumentPublicationState, Prisma } from "@prisma/client";
+import {
+  AttachmentStatus,
+  DocumentAccessMode,
+  DocumentPublicationState,
+  Prisma,
+} from "@prisma/client";
+import { ObjectStorageService } from "../attachments/object-storage.service";
 import type { AppEnvironment } from "../common/config/environment";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
@@ -31,6 +37,7 @@ export class DocumentSharingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
+    private readonly storage: ObjectStorageService,
     config: ConfigService<AppEnvironment, true>,
   ) {
     this.webUrl = config.getOrThrow("WEB_URL", { infer: true }).replace(/\/$/, "");
@@ -209,6 +216,28 @@ export class DocumentSharingService {
     };
   }
 
+  async publicAttachmentUrl(publicSlug: string, attachmentId: string): Promise<string> {
+    const attachment = await this.prisma.attachment.findFirst({
+      where: {
+        id: attachmentId,
+        status: AttachmentStatus.READY,
+        document: {
+          publicSlug,
+          publicationState: DocumentPublicationState.PUBLISHED,
+          deletedAt: null,
+          archivedAt: null,
+        },
+      },
+      select: { objectKey: true, fileName: true, mimeType: true },
+    });
+    if (attachment === null) throw new NotFoundException("Published attachment not found");
+    return this.storage.createDownloadUrl(
+      attachment.objectKey,
+      attachment.fileName,
+      attachment.mimeType,
+    );
+  }
+
   private async requireManageableDocument(
     database: PrismaService | Prisma.TransactionClient,
     userId: string,
@@ -254,7 +283,7 @@ export class DocumentSharingService {
         document.publicationState !== DocumentPublicationState.PUBLISHED ||
         document.publicSlug === null
           ? null
-          : `${this.webUrl}/public/${document.publicSlug}`,
+          : `${this.webUrl}/p/${document.publicSlug}`,
       links: links.map((link) => mapLink(link, null)),
     };
   }

@@ -6,8 +6,10 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -114,5 +116,15 @@ export class DocumentSharingController {
   @ApiOkResponse({ type: PublishedDocumentDto })
   resolvePublished(@Param("publicSlug") publicSlug: string): Promise<PublishedDocumentDto> {
     return this.sharing.resolvePublished(publicSlug);
+  }
+
+  @Get("public-documents/:publicSlug/attachments/:attachmentId")
+  @ApiOperation({ summary: "Redirect a published attachment to short-lived object storage" })
+  async publicAttachment(
+    @Param("publicSlug") publicSlug: string,
+    @Param("attachmentId", ParseUUIDPipe) attachmentId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.redirect(302, await this.sharing.publicAttachmentUrl(publicSlug, attachmentId));
   }
 }

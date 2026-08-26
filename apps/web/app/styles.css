@@ -1037,6 +1037,93 @@ textarea {
   display: flex;
   gap: 0.7rem;
 }
+.public-document-page {
+  background: #fbfaf7;
+  min-height: 100vh;
+  padding: clamp(2rem, 6vw, 5rem) 1.25rem 20vh;
+}
+.public-document {
+  margin: 0 auto;
+  max-width: 48rem;
+}
+.public-document > header {
+  border-bottom: 1px solid #e8e3da;
+  margin-bottom: 3rem;
+  padding-bottom: 2.5rem;
+}
+.public-document > header .brand {
+  display: inline-block;
+  font-size: 0.78rem;
+  margin-bottom: 4rem;
+}
+.public-document h1 {
+  font-size: clamp(2.4rem, 7vw, 4.6rem);
+  letter-spacing: -0.055em;
+  line-height: 1.02;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.public-document-blocks {
+  color: #302c27;
+}
+.public-document-blocks p,
+.public-document-blocks li,
+.public-task {
+  font-size: 1.04rem;
+  line-height: 1.75;
+}
+.public-document-blocks h2,
+.public-document-blocks h3,
+.public-document-blocks h4 {
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  margin: 2.2rem 0 0.7rem;
+}
+.public-document-blocks h2 {
+  font-size: 2rem;
+}
+.public-document-blocks h3 {
+  font-size: 1.55rem;
+}
+.public-document-blocks h4 {
+  font-size: 1.25rem;
+}
+.public-document-blocks ul,
+.public-document-blocks ol {
+  padding-left: 1.6rem;
+}
+.public-task {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.7rem;
+  margin: 0.7rem 0;
+}
+.public-task input {
+  accent-color: #315f48;
+  margin-top: 0.42rem;
+}
+.public-document-blocks pre {
+  background: #26231f;
+  border-radius: 0.6rem;
+  color: #f7f3ec;
+  line-height: 1.55;
+  overflow-x: auto;
+  padding: 1.1rem 1.25rem;
+}
+.public-document-blocks figure {
+  margin: 2rem 0;
+}
+.public-document-blocks img {
+  border-radius: 0.55rem;
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+.public-document-blocks figcaption {
+  color: #777067;
+  font-size: 0.75rem;
+  margin-top: 0.55rem;
+}
 .status-page {
   flex-direction: column;
   justify-content: center;
