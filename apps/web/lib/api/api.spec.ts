@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ApiError, apiErrorMessage, isApiErrorBody } from "./errors";
-import { parseAuthResponse, parseDocumentTree, parseWorkspaces } from "./parsers";
+import {
+  parseAuthResponse,
+  parseDocumentTree,
+  parseDocumentVersionPreview,
+  parseWorkspaces,
+} from "./parsers";
 
 describe("frontend API boundary", () => {
   it("parses typed authentication and workspace responses", () => {
@@ -60,6 +65,39 @@ describe("frontend API boundary", () => {
     assert.equal(
       apiErrorMessage(new ApiError(400, "VALIDATION_ERROR", "Invalid", ["Email is invalid"])),
       "Email is invalid",
+    );
+  });
+
+  it("parses a typed version preview and rejects unsupported projection blocks", () => {
+    const version = {
+      id: "version-1",
+      documentId: "document-1",
+      title: "Checkpoint",
+      sourceSequence: "42",
+      restoredFromVersionId: null,
+      author: { id: "user-1", email: "person@example.com", displayName: "Person" },
+      createdAt: "2026-08-26T12:00:00.000Z",
+    };
+    const preview = parseDocumentVersionPreview({
+      ...version,
+      contentProjection: {
+        version: 1,
+        blocks: [{ id: "p-1", type: "paragraph", text: "Earlier content" }],
+        plainText: "Earlier content",
+      },
+    });
+    assert.equal(preview.contentProjection.blocks[0]?.type, "paragraph");
+    assert.throws(
+      () =>
+        parseDocumentVersionPreview({
+          ...version,
+          contentProjection: {
+            version: 1,
+            blocks: [{ id: "html", type: "html", value: "<script />" }],
+            plainText: "",
+          },
+        }),
+      TypeError,
     );
   });
 });

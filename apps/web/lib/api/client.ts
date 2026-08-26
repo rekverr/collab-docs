@@ -4,6 +4,10 @@ import {
   parseCurrentUser,
   parseDocument,
   parseDocumentTree,
+  parseDocumentVersion,
+  parseDocumentVersionPreview,
+  parseDocumentVersions,
+  parseRestoreDocumentVersionResult,
   parseWorkspace,
   parseWorkspaces,
 } from "./parsers";
@@ -12,6 +16,9 @@ import type {
   CurrentUser,
   DocumentMetadata,
   DocumentTreeNode,
+  DocumentVersion,
+  DocumentVersionPreview,
+  RestoreDocumentVersionResult,
   WorkspaceSummary,
 } from "./types";
 
@@ -139,5 +146,38 @@ export const documentApi = {
       method: "DELETE",
       headers: authorization(token),
     });
+  },
+};
+
+export const versionApi = {
+  list(token: string, documentId: string): Promise<DocumentVersion[]> {
+    return request(`/documents/${encodeURIComponent(documentId)}/versions`, parseDocumentVersions, {
+      headers: authorization(token),
+    });
+  },
+  create(token: string, documentId: string, title?: string): Promise<DocumentVersion> {
+    return request(`/documents/${encodeURIComponent(documentId)}/versions`, parseDocumentVersion, {
+      method: "POST",
+      headers: authorization(token),
+      body: JSON.stringify(title === undefined ? {} : { title }),
+    });
+  },
+  preview(token: string, documentId: string, versionId: string): Promise<DocumentVersionPreview> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}`,
+      parseDocumentVersionPreview,
+      { headers: authorization(token) },
+    );
+  },
+  restore(
+    token: string,
+    documentId: string,
+    versionId: string,
+  ): Promise<RestoreDocumentVersionResult> {
+    return request(
+      `/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/restore`,
+      parseRestoreDocumentVersionResult,
+      { method: "POST", headers: authorization(token) },
+    );
   },
 };

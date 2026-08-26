@@ -10,15 +10,18 @@ import type {
   StoredUpdate,
 } from "./persistence.js";
 import { DocumentUnavailableError } from "./persistence.js";
+import { DocumentReloadRequiredError } from "./persistence.js";
 
 export interface PrismaPersistenceOptions {
   compactAfterUpdates?: number;
   retainedSnapshots?: number;
+  versionEveryUpdates?: number;
 }
 
 export class PrismaCollaborationPersistence implements CollaborationPersistence {
   private readonly compactAfterUpdates: number;
   private readonly retainedSnapshots: number;
+  private readonly versionEveryUpdates: number;
   private readonly localCompactions = new Map<string, Promise<CompactionResult>>();
 
   constructor(
@@ -28,6 +31,7 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
   ) {
     this.compactAfterUpdates = options.compactAfterUpdates ?? 100;
     this.retainedSnapshots = options.retainedSnapshots ?? 3;
+    this.versionEveryUpdates = options.versionEveryUpdates ?? 50;
   }
 
   load(documentId: string): Promise<PersistedDocumentState> {
@@ -46,6 +50,7 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
           select: { sequence: true, update: true },
         });
         return {
+          sequence: updates.at(-1)?.sequence ?? snapshot?.sequence ?? 0n,
           snapshot:
             snapshot === null
               ? null
@@ -71,12 +76,22 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
           where: { documentId_updateHash: { documentId: input.documentId, updateHash } },
           select: { sequence: true },
         });
-        if (existing !== null)
+        if (existing !== null) {
+          if (
+            document.projectionSequence !== input.baseSequence &&
+            existing.sequence !== document.projectionSequence
+          ) {
+            throw new DocumentReloadRequiredError();
+          }
           return {
-            sequence: existing.sequence,
+            sequence: document.projectionSequence,
             duplicate: true,
             published: document.publicationState === "PUBLISHED",
           };
+        }
+        if (document.projectionSequence !== input.baseSequence) {
+          throw new DocumentReloadRequiredError();
+        }
         const maximum = await transaction.yjsUpdate.aggregate({
           where: { documentId: input.documentId },
           _max: { sequence: true },
@@ -105,6 +120,18 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
             projectionUpdatedAt: new Date(),
           },
         });
+        if (sequence % BigInt(this.versionEveryUpdates) === 0n) {
+          await transaction.documentVersion.create({
+            data: {
+              documentId: input.documentId,
+              authorId: input.actorUserId,
+              sourceSequence: sequence,
+              title: document.title,
+              yjsState: Buffer.from(Y.encodeStateAsUpdate(input.document)),
+              contentProjection: projection,
+            },
+          });
+        }
         return { sequence, duplicate: false, published: document.publicationState === "PUBLISHED" };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -227,7 +254,7 @@ async function lockDocument(transaction: Transaction, documentId: string): Promi
 async function requireActiveDocument(transaction: Transaction, documentId: string) {
   const document = await transaction.document.findFirst({
     where: { id: documentId, deletedAt: null, archivedAt: null },
-    select: { id: true, publicationState: true },
+    select: { id: true, title: true, publicationState: true, projectionSequence: true },
   });
   if (document === null) throw new DocumentUnavailableError();
   return document;

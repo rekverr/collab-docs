@@ -2,8 +2,13 @@ import type {
   AuthResponse,
   CurrentUser,
   DocumentMetadata,
+  DocumentProjection,
+  DocumentProjectionBlock,
   DocumentPublicationState,
   DocumentTreeNode,
+  DocumentVersion,
+  DocumentVersionPreview,
+  RestoreDocumentVersionResult,
   WorkspaceRole,
   WorkspaceSummary,
 } from "./types";
@@ -110,4 +115,122 @@ export function parseDocumentTreeNode(value: unknown): DocumentTreeNode {
 export function parseDocumentTree(value: unknown): DocumentTreeNode[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid document tree response");
   return value.map(parseDocumentTreeNode);
+}
+
+export function parseDocumentVersion(value: unknown): DocumentVersion {
+  const data = record(value, "document version");
+  const authorValue = field(data, "author");
+  const author =
+    authorValue === null
+      ? null
+      : (() => {
+          const authorData = record(authorValue, "document version author");
+          return {
+            id: string(field(authorData, "id"), "document version author"),
+            email: string(field(authorData, "email"), "document version author"),
+            displayName: nullableString(
+              field(authorData, "displayName"),
+              "document version author",
+            ),
+          };
+        })();
+  return {
+    id: string(field(data, "id"), "document version"),
+    documentId: string(field(data, "documentId"), "document version"),
+    title: string(field(data, "title"), "document version"),
+    sourceSequence: string(field(data, "sourceSequence"), "document version"),
+    restoredFromVersionId: nullableString(field(data, "restoredFromVersionId"), "document version"),
+    author,
+    createdAt: string(field(data, "createdAt"), "document version"),
+  };
+}
+
+export function parseDocumentVersions(value: unknown): DocumentVersion[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid document version list response");
+  return value.map(parseDocumentVersion);
+}
+
+export function parseDocumentVersionPreview(value: unknown): DocumentVersionPreview {
+  const data = record(value, "document version preview");
+  return {
+    ...parseDocumentVersion(data),
+    contentProjection: parseDocumentProjection(field(data, "contentProjection")),
+  };
+}
+
+export function parseRestoreDocumentVersionResult(value: unknown): RestoreDocumentVersionResult {
+  const data = record(value, "document version restore");
+  const reloadRequested = field(data, "collaborationReloadRequested");
+  if (typeof reloadRequested !== "boolean") {
+    throw new TypeError("Invalid document version restore response");
+  }
+  return {
+    version: parseDocumentVersion(field(data, "version")),
+    collaborationReloadRequested: reloadRequested,
+  };
+}
+
+function parseDocumentProjection(value: unknown): DocumentProjection {
+  const data = record(value, "document projection");
+  const version = field(data, "version");
+  const blocks = field(data, "blocks");
+  if (version !== 1 || !Array.isArray(blocks)) {
+    throw new TypeError("Invalid document projection response");
+  }
+  return {
+    version,
+    blocks: blocks.map(parseProjectionBlock),
+    plainText: string(field(data, "plainText"), "document projection"),
+  };
+}
+
+function parseProjectionBlock(value: unknown): DocumentProjectionBlock {
+  const data = record(value, "document projection block");
+  const id = string(field(data, "id"), "document projection block");
+  const type = string(field(data, "type"), "document projection block");
+  if (type === "paragraph") {
+    return { id, type, text: string(field(data, "text"), "paragraph block") };
+  }
+  if (type === "heading") {
+    const level = field(data, "level");
+    if (level !== 1 && level !== 2 && level !== 3) throw new TypeError("Invalid heading block");
+    return { id, type, level, text: string(field(data, "text"), "heading block") };
+  }
+  if (type === "list") {
+    const style = field(data, "style");
+    const items = field(data, "items");
+    if ((style !== "bullet" && style !== "numbered") || !Array.isArray(items)) {
+      throw new TypeError("Invalid list block");
+    }
+    return { id, type, style, items: items.map((item) => string(item, "list item")) };
+  }
+  if (type === "task") {
+    const checked = field(data, "checked");
+    if (typeof checked !== "boolean") throw new TypeError("Invalid task block");
+    return { id, type, checked, text: string(field(data, "text"), "task block") };
+  }
+  if (type === "code") {
+    return {
+      id,
+      type,
+      language: string(field(data, "language"), "code block"),
+      text: string(field(data, "text"), "code block"),
+    };
+  }
+  if (type === "image") {
+    const sourceData = record(field(data, "source"), "image source");
+    const kind = string(field(sourceData, "kind"), "image source");
+    const source: Extract<DocumentProjectionBlock, { type: "image" }>["source"] | null =
+      kind === "url"
+        ? { kind: "url", url: string(field(sourceData, "url"), "image source") }
+        : kind === "attachment"
+          ? {
+              kind: "attachment",
+              attachmentId: string(field(sourceData, "attachmentId"), "image source"),
+            }
+          : null;
+    if (source === null) throw new TypeError("Invalid image source");
+    return { id, type, source, alt: string(field(data, "alt"), "image block") };
+  }
+  throw new TypeError("Unsupported document projection block");
 }

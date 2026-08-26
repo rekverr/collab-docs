@@ -4,6 +4,7 @@ import { CollaborationServer } from "./collaboration-server.js";
 import { BullMqProjectionPublisher } from "./downstream.js";
 import { JsonLogger } from "./logger.js";
 import { PrismaCollaborationPersistence } from "./prisma-persistence.js";
+import { Redis } from "ioredis";
 
 const port = parsePort(process.env.COLLAB_PORT ?? "3002");
 const internalApiUrl = requireHttpUrl(process.env.INTERNAL_API_URL ?? "http://localhost:3001");
@@ -12,13 +13,17 @@ const compactAfterUpdates = parsePositiveInteger(
   process.env.CRDT_COMPACT_AFTER_UPDATES ?? "100",
   "CRDT_COMPACT_AFTER_UPDATES",
 );
+const versionEveryUpdates = parsePositiveInteger(
+  process.env.DOCUMENT_VERSION_EVERY_UPDATES ?? "50",
+  "DOCUMENT_VERSION_EVERY_UPDATES",
+);
 const logger = new JsonLogger();
 const prisma = new PrismaClient();
 await prisma.$connect();
 const persistence = new PrismaCollaborationPersistence(
   prisma,
   new BullMqProjectionPublisher(redisUrl),
-  { compactAfterUpdates },
+  { compactAfterUpdates, versionEveryUpdates },
 );
 const server = new CollaborationServer(
   { port },
@@ -28,12 +33,40 @@ const server = new CollaborationServer(
 );
 
 await server.start();
+const controlSubscriber = new Redis(redisUrl, {
+  enableReadyCheck: true,
+  maxRetriesPerRequest: null,
+});
+controlSubscriber.on("error", (error: Error) => {
+  logger.event("error", "collab_control_redis_error", { errorType: error.name });
+});
+controlSubscriber.on("message", (channel: string, message: string) => {
+  if (channel !== "collab:document-control") return;
+  const documentId = parseRestoredDocumentId(message);
+  if (documentId !== null) {
+    server.terminateDocument(documentId, "Document restored; reconnecting", 4410);
+  }
+});
+await controlSubscriber.subscribe("collab:document-control");
 
 async function shutdown(signal: string): Promise<void> {
   logger.event("info", "collab_shutdown", { signal });
   await server.stop();
+  await controlSubscriber.quit();
   await prisma.$disconnect();
   process.exitCode = 0;
+}
+
+function parseRestoredDocumentId(message: string): string | null {
+  try {
+    const value: unknown = JSON.parse(message);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const type: unknown = Reflect.get(value, "type");
+    const documentId: unknown = Reflect.get(value, "documentId");
+    return type === "restored" && typeof documentId === "string" ? documentId : null;
+  } catch {
+    return null;
+  }
 }
 
 function requireRedisUrl(value: string): string {

@@ -19,6 +19,7 @@ import {
   type CollaborationUser,
 } from "../../lib/collaboration/collab-provider";
 import { useSession } from "../auth/session-provider";
+import { VersionHistory } from "./version-history";
 
 interface CollaborativeEditorProps {
   documentId: string;
@@ -32,6 +33,22 @@ interface EditorRuntime {
 }
 
 export function CollaborativeEditor({ documentId, role }: Readonly<CollaborativeEditorProps>) {
+  const [generation, setGeneration] = useState(0);
+  return (
+    <CollaborativeEditorSession
+      key={`${documentId}-${generation}`}
+      documentId={documentId}
+      role={role}
+      onReloadRequired={() => setGeneration((value) => value + 1)}
+    />
+  );
+}
+
+function CollaborativeEditorSession({
+  documentId,
+  role,
+  onReloadRequired,
+}: Readonly<CollaborativeEditorProps & { onReloadRequired(): void }>) {
   const session = useSession();
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -68,6 +85,10 @@ export function CollaborativeEditor({ documentId, role }: Readonly<Collaborative
 
   useEffect(() => {
     const unsubscribe = runtime.provider.subscribe((state) => {
+      if (state === "reload-required") {
+        onReloadRequired();
+        return;
+      }
       setConnectionState(state);
       if (state === "connected") setHasConnected(true);
     });
@@ -77,7 +98,7 @@ export function CollaborativeEditor({ documentId, role }: Readonly<Collaborative
       runtime.provider.destroy();
       runtime.document.destroy();
     };
-  }, [runtime]);
+  }, [onReloadRequired, runtime]);
 
   if (connectionState === "permission-revoked") {
     return (
@@ -102,6 +123,8 @@ export function CollaborativeEditor({ documentId, role }: Readonly<Collaborative
         connectionState={connectionState}
         provider={runtime.provider}
         readOnly={readOnly}
+        documentId={documentId}
+        onRestored={onReloadRequired}
       />
       {hasConnected ? (
         <EditorSurface runtime={runtime} readOnly={readOnly} connectionState={connectionState} />
@@ -244,12 +267,17 @@ function EditorHeader({
   connectionState,
   provider,
   readOnly,
+  documentId,
+  onRestored,
 }: Readonly<{
   connectionState: CollaborationConnectionState;
   provider: CollabWebSocketProvider;
   readOnly: boolean;
+  documentId: string;
+  onRestored(): void;
 }>) {
   const [collaborators, setCollaborators] = useState<CollaborationUser[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     const update = (): void => {
@@ -273,21 +301,38 @@ function EditorHeader({
         </span>
         {readOnly && <span className="editor-mode">Viewer · read only</span>}
       </div>
-      <div
-        className="collaborator-list"
-        aria-label={`${collaborators.length} collaborators present`}
-      >
-        {collaborators.map((user) => (
-          <span
-            className="collaborator-avatar"
-            key={user.id}
-            style={{ backgroundColor: user.color }}
-            title={`${user.name} (${user.email})`}
-          >
-            {initials(user.name)}
-          </span>
-        ))}
+      <div className="editor-header-actions">
+        <button
+          className="text-button history-trigger"
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+        >
+          History
+        </button>
+        <div
+          className="collaborator-list"
+          aria-label={`${collaborators.length} collaborators present`}
+        >
+          {collaborators.map((user) => (
+            <span
+              className="collaborator-avatar"
+              key={user.id}
+              style={{ backgroundColor: user.color }}
+              title={`${user.name} (${user.email})`}
+            >
+              {initials(user.name)}
+            </span>
+          ))}
+        </div>
       </div>
+      {historyOpen && (
+        <VersionHistory
+          documentId={documentId}
+          canRestore={!readOnly}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={onRestored}
+        />
+      )}
     </header>
   );
 }
@@ -359,6 +404,7 @@ function connectionLabel(state: CollaborationConnectionState): string {
   if (state === "reconnecting") return "Reconnecting";
   if (state === "offline") return "Offline · changes are local until reconnection";
   if (state === "deleted") return "Document deleted";
+  if (state === "reload-required") return "Reloading restored version";
   return "Permission revoked";
 }
 

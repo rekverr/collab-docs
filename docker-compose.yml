@@ -125,6 +125,7 @@ services:
     environment:
       <<: *app-environment
       COLLAB_PORT: 3002
+      DOCUMENT_VERSION_EVERY_UPDATES: ${DOCUMENT_VERSION_EVERY_UPDATES:-50}
     ports:
       - "127.0.0.1:${COLLAB_PORT:-3002}:3002"
     depends_on:

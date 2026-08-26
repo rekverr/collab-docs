@@ -8,6 +8,7 @@ export interface PersistedUpdate {
   update: Uint8Array;
 }
 export interface PersistedDocumentState {
+  sequence: bigint;
   snapshot: { sequence: bigint; state: Uint8Array } | null;
   updates: readonly PersistedUpdate[];
 }
@@ -21,6 +22,7 @@ export interface PersistUpdateInput {
   update: Uint8Array;
   document: Y.Doc;
   projection: DocumentProjection;
+  baseSequence: bigint;
 }
 export interface CompactionResult {
   compacted: boolean;
@@ -40,6 +42,13 @@ export class DocumentUnavailableError extends Error {
   constructor() {
     super("Document is unavailable");
     this.name = "DocumentUnavailableError";
+  }
+}
+
+export class DocumentReloadRequiredError extends Error {
+  constructor() {
+    super("Document state changed outside the active collaboration room");
+    this.name = "DocumentReloadRequiredError";
   }
 }
 
@@ -71,6 +80,7 @@ export class InMemoryCollaborationPersistence implements CollaborationPersistenc
   load(documentId: string): Promise<PersistedDocumentState> {
     const record = this.require(documentId);
     return Promise.resolve({
+      sequence: maxSequence(record),
       snapshot: cloneSnapshot(record.snapshot),
       updates: record.updates.map(({ sequence, update }) => ({ sequence, update: update.slice() })),
     });
@@ -80,8 +90,14 @@ export class InMemoryCollaborationPersistence implements CollaborationPersistenc
     const record = this.require(input.documentId);
     const updateHash = createHash("sha256").update(input.update).digest("hex");
     const existing = record.updates.find(({ hash }) => hash === updateHash);
-    if (existing !== undefined)
-      return Promise.resolve({ sequence: existing.sequence, duplicate: true });
+    if (existing !== undefined) {
+      const currentSequence = maxSequence(record);
+      if (currentSequence !== input.baseSequence && existing.sequence !== currentSequence) {
+        throw new DocumentReloadRequiredError();
+      }
+      return Promise.resolve({ sequence: currentSequence, duplicate: true });
+    }
+    if (maxSequence(record) !== input.baseSequence) throw new DocumentReloadRequiredError();
     const sequence = maxSequence(record) + 1n;
     record.updates.push({ sequence, update: input.update.slice(), hash: updateHash });
     return Promise.resolve({ sequence, duplicate: false });
@@ -95,7 +111,11 @@ export class InMemoryCollaborationPersistence implements CollaborationPersistenc
         sequence: record.snapshot?.sequence ?? 0n,
         removedUpdates: 0,
       });
-    const document = reconstructDocument({ snapshot: record.snapshot, updates: record.updates });
+    const document = reconstructDocument({
+      sequence: maxSequence(record),
+      snapshot: record.snapshot,
+      updates: record.updates,
+    });
     const sequence = record.updates.at(-1)!.sequence;
     const durableSnapshot = { sequence, state: Yjs.encodeStateAsUpdate(document) };
     record.snapshot = durableSnapshot;

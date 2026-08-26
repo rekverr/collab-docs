@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as Y from "yjs";
 import {
+  DocumentReloadRequiredError,
   InMemoryCollaborationPersistence,
   reconstructDocument,
   type PersistedDocumentState,
@@ -21,6 +22,7 @@ describe("durable Yjs state", () => {
     });
     source.getText("content").insert(8, "+update");
     const state: PersistedDocumentState = {
+      sequence: 5n,
       snapshot: { sequence: 4n, state: snapshot },
       updates: [{ sequence: 5n, update: incremental }],
     };
@@ -40,6 +42,7 @@ describe("durable Yjs state", () => {
       update,
       document,
       projection: deriveDocumentProjection(document),
+      baseSequence: 0n,
     };
     const first = await persistence.storeUpdate(input);
     const duplicate = await persistence.storeUpdate(input);
@@ -59,6 +62,7 @@ describe("durable Yjs state", () => {
       update,
       document,
       projection: deriveDocumentProjection(document),
+      baseSequence: 0n,
     });
     update = captureUpdate(document, () => document.getText("content").insert(1, "B"));
     await persistence.storeUpdate({
@@ -67,6 +71,7 @@ describe("durable Yjs state", () => {
       update,
       document,
       projection: deriveDocumentProjection(document),
+      baseSequence: 1n,
     });
     const compacted = await persistence.compact(documentId);
     const compactedState = await persistence.load(documentId);
@@ -82,9 +87,39 @@ describe("durable Yjs state", () => {
       update,
       document,
       projection: deriveDocumentProjection(document),
+      baseSequence: 2n,
     });
     const cold = reconstructDocument(await persistence.load(documentId));
     assert.equal(cold.getText("content").toString(), "ABC");
+  });
+
+  it("rejects a stale room sequence instead of overwriting externally restored state", async () => {
+    const persistence = new InMemoryCollaborationPersistence();
+    persistence.createDocument(documentId);
+    const document = new Y.Doc();
+    const firstUpdate = captureUpdate(document, () => document.getText("content").insert(0, "A"));
+    await persistence.storeUpdate({
+      documentId,
+      actorUserId: "user",
+      update: firstUpdate,
+      document,
+      projection: deriveDocumentProjection(document),
+      baseSequence: 0n,
+    });
+    const staleUpdate = captureUpdate(document, () => document.getText("content").insert(1, "B"));
+
+    assert.throws(
+      () =>
+        persistence.storeUpdate({
+          documentId,
+          actorUserId: "user",
+          update: staleUpdate,
+          document,
+          projection: deriveDocumentProjection(document),
+          baseSequence: 0n,
+        }),
+      DocumentReloadRequiredError,
+    );
   });
 
   it("derives a normalized projection rather than client HTML", () => {

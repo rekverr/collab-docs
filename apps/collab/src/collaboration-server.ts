@@ -13,7 +13,11 @@ import {
 import type { StructuredLogger } from "./logger.js";
 import { CollaborationMetrics } from "./metrics.js";
 import type { CollaborationPersistence } from "./persistence.js";
-import { DocumentUnavailableError, reconstructDocument } from "./persistence.js";
+import {
+  DocumentReloadRequiredError,
+  DocumentUnavailableError,
+  reconstructDocument,
+} from "./persistence.js";
 import { deriveDocumentProjection } from "./projection.js";
 
 const messageSync = 0;
@@ -41,6 +45,7 @@ interface CollaborationRoom {
   connections: Map<WebSocket, ConnectionState>;
   writeChain: Promise<void>;
   failed: boolean;
+  durableSequence: bigint;
 }
 
 export interface CollaborationServerOptions {
@@ -55,6 +60,7 @@ export class CollaborationServer {
   readonly metrics = new CollaborationMetrics();
   private readonly rooms = new Map<string, CollaborationRoom>();
   private readonly pendingRooms = new Map<string, Promise<CollaborationRoom>>();
+  private readonly invalidationGenerations = new Map<string, number>();
   private readonly http: HttpServer;
   private readonly sockets: WebSocketServer;
 
@@ -114,11 +120,19 @@ export class CollaborationServer {
   terminateDocument(
     documentId: string,
     reason = "Document access revoked",
-    closeCode: 4403 | 4404 = 4403,
+    closeCode: 4403 | 4404 | 4410 = 4403,
   ): void {
+    this.invalidationGenerations.set(
+      documentId,
+      (this.invalidationGenerations.get(documentId) ?? 0) + 1,
+    );
     const room = this.rooms.get(documentId);
     if (room === undefined) return;
+    room.failed = true;
+    this.rooms.delete(documentId);
+    this.metrics.activeRooms = this.rooms.size;
     for (const socket of room.connections.keys()) socket.close(closeCode, reason);
+    if (room.connections.size === 0) this.destroyRoom(room);
   }
 
   activeRoomCount(): number {
@@ -221,6 +235,8 @@ export class CollaborationServer {
       } else if (error instanceof DocumentUnavailableError) {
         this.metrics.permissionFailuresTotal += 1;
         this.fail(socket, 4404, "Document was deleted", "document_unavailable");
+      } else if (error instanceof DocumentReloadRequiredError) {
+        this.fail(socket, 4410, "Document restored; reconnect required", "collab_reload_required");
       } else {
         this.fail(
           socket,
@@ -307,8 +323,13 @@ export class CollaborationServer {
   }
 
   private async createRoom(documentId: string): Promise<CollaborationRoom> {
+    const generation = this.invalidationGenerations.get(documentId) ?? 0;
     const persisted = await this.persistence.load(documentId);
     const doc = reconstructDocument(persisted);
+    if ((this.invalidationGenerations.get(documentId) ?? 0) !== generation) {
+      doc.destroy();
+      throw new DocumentReloadRequiredError();
+    }
     const awareness = new awarenessProtocol.Awareness(doc);
     const room: CollaborationRoom = {
       documentId,
@@ -317,6 +338,7 @@ export class CollaborationServer {
       connections: new Map(),
       writeChain: Promise.resolve(),
       failed: false,
+      durableSequence: persisted.sequence,
     };
     awareness.on(
       "update",
@@ -389,7 +411,9 @@ export class CollaborationServer {
         update,
         document: state.room.doc,
         projection,
+        baseSequence: state.room.durableSequence,
       });
+      state.room.durableSequence = stored.sequence;
       if (stored.duplicate) this.metrics.duplicateUpdatesTotal += 1;
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
@@ -402,29 +426,34 @@ export class CollaborationServer {
       });
     } catch (error: unknown) {
       state.room.failed = true;
+      const reloadRequired = error instanceof DocumentReloadRequiredError;
       const deleted = error instanceof DocumentUnavailableError;
       const unavailableDocument =
         error instanceof AuthorizationFailure && error.kind === "document";
       const revoked = error instanceof AuthorizationFailure && error.kind === "permission";
       if (deleted || unavailableDocument || revoked) this.metrics.permissionFailuresTotal += 1;
-      else this.metrics.persistenceFailuresTotal += 1;
+      else if (!reloadRequired) this.metrics.persistenceFailuresTotal += 1;
       this.logger.event(
-        deleted || unavailableDocument || revoked ? "warn" : "error",
+        deleted || unavailableDocument || revoked || reloadRequired ? "warn" : "error",
         deleted || unavailableDocument
           ? "collab_document_unavailable"
-          : revoked
-            ? "collab_permission_revoked"
-            : "collab_persistence_failure",
+          : reloadRequired
+            ? "collab_reload_required"
+            : revoked
+              ? "collab_permission_revoked"
+              : "collab_persistence_failure",
         { documentId: state.identity.documentId },
       );
       for (const connection of state.room.connections.keys()) {
         connection.close(
-          deleted || unavailableDocument ? 4404 : revoked ? 4403 : 1011,
+          deleted || unavailableDocument ? 4404 : reloadRequired ? 4410 : revoked ? 4403 : 1011,
           deleted || unavailableDocument
             ? "Document was deleted"
-            : revoked
-              ? "Document access revoked"
-              : "Update was not saved; reconnect required",
+            : reloadRequired
+              ? "Document restored; reconnect required"
+              : revoked
+                ? "Document access revoked"
+                : "Update was not saved; reconnect required",
         );
       }
     }
@@ -443,12 +472,15 @@ export class CollaborationServer {
   }
 
   private destroyRoom(room: CollaborationRoom): void {
-    if (!this.rooms.delete(room.documentId)) return;
-    void this.persistence
-      .roomClosed?.(room.documentId)
-      .catch(() =>
-        this.logger.event("error", "collab_compaction_failure", { documentId: room.documentId }),
-      );
+    const registered = this.rooms.get(room.documentId) === room;
+    if (registered) {
+      this.rooms.delete(room.documentId);
+      void this.persistence
+        .roomClosed?.(room.documentId)
+        .catch(() =>
+          this.logger.event("error", "collab_compaction_failure", { documentId: room.documentId }),
+        );
+    }
     room.awareness.destroy();
     room.doc.destroy();
     this.metrics.activeRooms = this.rooms.size;

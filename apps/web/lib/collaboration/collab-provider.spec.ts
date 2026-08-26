@@ -6,6 +6,7 @@ describe("collaboration provider helpers", () => {
   it("maps terminal collaboration close codes without retrying", () => {
     assert.equal(connectionStateFromClose(4403, true), "permission-revoked");
     assert.equal(connectionStateFromClose(4404, true), "deleted");
+    assert.equal(connectionStateFromClose(4410, true), "reload-required");
   });
 
   it("distinguishes offline and reconnecting transport failures", () => {

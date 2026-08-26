@@ -9,7 +9,13 @@ const MESSAGE_AWARENESS = 1;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 
 export type CollaborationConnectionState =
-  "connecting" | "connected" | "reconnecting" | "offline" | "permission-revoked" | "deleted";
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "offline"
+  | "permission-revoked"
+  | "deleted"
+  | "reload-required";
 
 export interface CollaborationUser {
   id: string;
@@ -187,7 +193,13 @@ export class CollabWebSocketProvider {
 
     const nextState = connectionStateFromClose(event.code, navigator.onLine);
     this.setState(nextState);
-    if (nextState === "permission-revoked" || nextState === "deleted") return;
+    if (
+      nextState === "permission-revoked" ||
+      nextState === "deleted" ||
+      nextState === "reload-required"
+    ) {
+      return;
+    }
     this.scheduleReconnect();
   }
 
@@ -236,7 +248,11 @@ export class CollabWebSocketProvider {
   }
 
   private isTerminal(): boolean {
-    return this.state === "permission-revoked" || this.state === "deleted";
+    return (
+      this.state === "permission-revoked" ||
+      this.state === "deleted" ||
+      this.state === "reload-required"
+    );
   }
 }
 
@@ -246,6 +262,7 @@ export function connectionStateFromClose(
 ): CollaborationConnectionState {
   if (closeCode === 4403) return "permission-revoked";
   if (closeCode === 4404) return "deleted";
+  if (closeCode === 4410) return "reload-required";
   return online ? "reconnecting" : "offline";
 }
 

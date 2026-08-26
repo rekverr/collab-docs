@@ -138,6 +138,25 @@ describe("authenticated Yjs collaboration", () => {
     assert.equal(target.getText("content").toString(), "concurrent-safe");
     assert.equal(server.activeRoomCount(), 1);
   });
+
+  it("evicts an active room so restored state is loaded by a fresh connection", async () => {
+    const { server, url } = await start({ valid: editor });
+    const first = await connect(url);
+    const initial = onceBinaryMessage(first);
+    authenticate(first, "valid");
+    await initial;
+    const closed = onceClose(first);
+
+    server.terminateDocument(documentId, "Document restored; reconnecting", 4410);
+
+    assert.equal(await closed, 4410);
+    assert.equal(server.activeRoomCount(), 0);
+    const second = await connect(url);
+    const secondInitial = onceBinaryMessage(second);
+    authenticate(second, "valid");
+    await secondInitial;
+    assert.equal(server.activeRoomCount(), 1);
+  });
 });
 
 function syncUpdateMessage(update: Uint8Array): Uint8Array {
