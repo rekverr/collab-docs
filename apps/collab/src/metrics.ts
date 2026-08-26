@@ -7,6 +7,8 @@ export class CollaborationMetrics {
   disconnectsTotal = 0;
   protocolFailuresTotal = 0;
   rejectedWritesTotal = 0;
+  persistenceFailuresTotal = 0;
+  duplicateUpdatesTotal = 0;
 
   render(): string {
     return [
@@ -18,6 +20,8 @@ export class CollaborationMetrics {
       "# TYPE collab_disconnects_total counter", `collab_disconnects_total ${this.disconnectsTotal}`,
       "# TYPE collab_protocol_failures_total counter", `collab_protocol_failures_total ${this.protocolFailuresTotal}`,
       "# TYPE collab_rejected_writes_total counter", `collab_rejected_writes_total ${this.rejectedWritesTotal}`,
+      "# TYPE collab_persistence_failures_total counter", `collab_persistence_failures_total ${this.persistenceFailuresTotal}`,
+      "# TYPE collab_duplicate_updates_total counter", `collab_duplicate_updates_total ${this.duplicateUpdatesTotal}`,
       "",
     ].join("\n");
   }

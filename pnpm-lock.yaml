@@ -77,6 +77,15 @@ importers:
 
   apps/collab:
     dependencies:
+      '@prisma/client':
+        specifier: ^6.19.0
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      bullmq:
+        specifier: ^5.58.0
+        version: 5.81.3(supports-color@8.1.1)
+      ioredis:
+        specifier: ^5.7.0
+        version: 5.11.1(supports-color@8.1.1)
       lib0:
         specifier: ^0.2.114
         version: 0.2.117

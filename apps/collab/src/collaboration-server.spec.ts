@@ -8,7 +8,7 @@ import * as syncProtocol from "y-protocols/sync";
 import { AuthorizationFailure, type CollaborationAuthorizer, type CollaborationIdentity } from "./authorization.js";
 import { CollaborationServer } from "./collaboration-server.js";
 import type { StructuredLogger } from "./logger.js";
-import type { CollaborationPersistence } from "./persistence.js";
+import { InMemoryCollaborationPersistence } from "./persistence.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
 const editor: CollaborationIdentity = { documentId, userId: "editor", email: "editor@example.com", displayName: "Editor", canWrite: true };
@@ -23,10 +23,8 @@ class FakeAuthorizer implements CollaborationAuthorizer {
   }
 }
 
-class MemoryPersistence implements CollaborationPersistence {
-  readonly updates: Uint8Array[] = [];
-  load(): Promise<readonly Uint8Array[]> { return Promise.resolve(this.updates); }
-  storeUpdate(_documentId: string, update: Uint8Array): Promise<void> { this.updates.push(update); return Promise.resolve(); }
+class MemoryPersistence extends InMemoryCollaborationPersistence {
+  constructor() { super(); this.createDocument(documentId); }
 }
 
 const silentLogger: StructuredLogger = { event: () => undefined };

@@ -9,6 +9,8 @@ import { AuthorizationFailure, type CollaborationAuthorizer, type CollaborationI
 import type { StructuredLogger } from "./logger.js";
 import { CollaborationMetrics } from "./metrics.js";
 import type { CollaborationPersistence } from "./persistence.js";
+import { DocumentUnavailableError, reconstructDocument } from "./persistence.js";
+import { deriveDocumentProjection } from "./projection.js";
 
 const messageSync = 0;
 const messageAwareness = 1;
@@ -29,6 +31,8 @@ interface CollaborationRoom {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   connections: Map<WebSocket, ConnectionState>;
+  writeChain: Promise<void>;
+  failed: boolean;
 }
 
 export interface CollaborationServerOptions {
@@ -77,6 +81,7 @@ export class CollaborationServer {
     for (const room of this.rooms.values()) this.destroyRoom(room);
     await new Promise<void>((resolve) => this.sockets.close(() => resolve()));
     if (this.http.listening) await new Promise<void>((resolve, reject) => this.http.close((error) => error === undefined ? resolve() : reject(error)));
+    await this.persistence.close?.();
   }
 
   terminateDocument(documentId: string, reason = "Document access revoked"): void {
@@ -138,6 +143,8 @@ export class CollaborationServer {
         this.metrics.authFailuresTotal += 1; this.fail(socket, 4401, "Authentication failed", "auth_failure");
       } else if (error instanceof AuthorizationFailure && error.kind === "permission") {
         this.metrics.permissionFailuresTotal += 1; this.fail(socket, 4403, "Document access denied", "permission_failure");
+      } else if (error instanceof DocumentUnavailableError) {
+        this.metrics.permissionFailuresTotal += 1; this.fail(socket, 4403, "Document is unavailable", "document_unavailable");
       } else {
         this.fail(socket, 1013, "Authorization temporarily unavailable", "authorization_unavailable");
       }
@@ -151,7 +158,24 @@ export class CollaborationServer {
       const type = decoding.readVarUint(inspect);
       if (type === messageSync) {
         const syncType = decoding.readVarUint(inspect);
-        const viewerWrite = !state.identity.canWrite && (syncType === syncUpdate || (syncType === syncStep2 && !isEmptySyncStep2(inspect)));
+        if (syncType === syncStep2 || syncType === syncUpdate) {
+          const update = decoding.readVarUint8Array(inspect);
+          const emptyUpdate = isEmptyYjsUpdate(update);
+          if (emptyUpdate) return;
+          const viewerWrite = !state.identity.canWrite;
+          if (viewerWrite) {
+            this.metrics.rejectedWritesTotal += 1;
+            this.logger.event("warn", "collab_write_rejected", { documentId: state.identity.documentId, userId: state.identity.userId });
+            socket.close(4403, "Document is read-only");
+            return;
+          }
+          if (!state.identity.canWrite) return;
+          state.room.writeChain = state.room.writeChain
+            .then(() => this.persistAndBroadcast(socket, state, update))
+            .catch(() => undefined);
+          return;
+        }
+        const viewerWrite = !state.identity.canWrite && syncType !== 0;
         if (viewerWrite) {
           this.metrics.rejectedWritesTotal += 1;
           this.logger.event("warn", "collab_write_rejected", { documentId: state.identity.documentId, userId: state.identity.userId });
@@ -188,16 +212,10 @@ export class CollaborationServer {
   }
 
   private async createRoom(documentId: string): Promise<CollaborationRoom> {
-    const doc = new Y.Doc();
-    for (const update of await this.persistence.load(documentId)) Y.applyUpdate(doc, update, "persistence-load");
+    const persisted = await this.persistence.load(documentId);
+    const doc = reconstructDocument(persisted);
     const awareness = new awarenessProtocol.Awareness(doc);
-    const room: CollaborationRoom = { documentId, doc, awareness, connections: new Map() };
-    doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin === "persistence-load") return;
-      void this.persistence.storeUpdate(documentId, update).catch(() => this.logger.event("error", "collab_persistence_failure", { documentId }));
-      const encoder = encoding.createEncoder(); encoding.writeVarUint(encoder, messageSync); syncProtocol.writeUpdate(encoder, update);
-      this.broadcast(room, encoding.toUint8Array(encoder));
-    });
+    const room: CollaborationRoom = { documentId, doc, awareness, connections: new Map(), writeChain: Promise.resolve(), failed: false };
     awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
       const clients = [...added, ...updated, ...removed];
       if (clients.length === 0) return;
@@ -228,6 +246,39 @@ export class CollaborationServer {
     for (const socket of room.connections.keys()) if (socket.readyState === WebSocket.OPEN) socket.send(message);
   }
 
+  private async persistAndBroadcast(socket: WebSocket, state: ConnectionState, update: Uint8Array): Promise<void> {
+    if (state.room.failed || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      const current = await this.authorizer.authorize(state.accessToken, state.identity.documentId);
+      if (current.userId !== state.identity.userId || !current.canWrite) {
+        this.metrics.rejectedWritesTotal += 1;
+        socket.close(4403, "Document write access revoked");
+        return;
+      }
+      state.identity = current;
+      Y.applyUpdate(state.room.doc, update, "pending-durable-write");
+      const projection = deriveDocumentProjection(state.room.doc);
+      const stored = await this.persistence.storeUpdate({
+        documentId: state.identity.documentId, actorUserId: state.identity.userId, update, document: state.room.doc, projection,
+      });
+      if (stored.duplicate) this.metrics.duplicateUpdatesTotal += 1;
+      const encoder = encoding.createEncoder(); encoding.writeVarUint(encoder, messageSync); syncProtocol.writeUpdate(encoder, update);
+      this.broadcast(state.room, encoding.toUint8Array(encoder));
+      this.logger.event("info", "collab_update_persisted", {
+        documentId: state.identity.documentId, sequence: stored.sequence.toString(), duplicate: stored.duplicate,
+      });
+    } catch (error: unknown) {
+      state.room.failed = true;
+      const deleted = error instanceof DocumentUnavailableError || (error instanceof AuthorizationFailure && error.kind === "permission");
+      if (deleted) this.metrics.permissionFailuresTotal += 1;
+      else this.metrics.persistenceFailuresTotal += 1;
+      this.logger.event(deleted ? "warn" : "error", deleted ? "collab_document_unavailable" : "collab_persistence_failure", { documentId: state.identity.documentId });
+      for (const connection of state.room.connections.keys()) {
+        connection.close(deleted ? 4403 : 1011, deleted ? "Document is unavailable" : "Update was not saved; reconnect required");
+      }
+    }
+  }
+
   private leaveRoom(socket: WebSocket, state: ConnectionState): void {
     if (state.recheckTimer !== undefined) clearInterval(state.recheckTimer);
     state.room.connections.delete(socket);
@@ -237,7 +288,7 @@ export class CollaborationServer {
 
   private destroyRoom(room: CollaborationRoom): void {
     if (!this.rooms.delete(room.documentId)) return;
-    void this.persistence.roomClosed?.(room.documentId, room.doc);
+    void this.persistence.roomClosed?.(room.documentId).catch(() => this.logger.event("error", "collab_compaction_failure", { documentId: room.documentId }));
     room.awareness.destroy(); room.doc.destroy();
     this.metrics.activeRooms = this.rooms.size;
     this.logger.event("info", "collab_room_closed", { documentId: room.documentId, activeRooms: this.rooms.size });
@@ -287,9 +338,8 @@ function isConnectionState(value: unknown): value is ConnectionState {
   return typeof value === "object" && value !== null && Reflect.get(value, "awarenessClientIds") instanceof Set;
 }
 
-function isEmptySyncStep2(decoder: decoding.Decoder): boolean {
+function isEmptyYjsUpdate(update: Uint8Array): boolean {
   try {
-    const update = decoding.readVarUint8Array(decoder);
     const decoded = Y.decodeUpdate(update);
     return decoded.structs.length === 0 && decoded.ds.clients.size === 0;
   } catch { return false; }
