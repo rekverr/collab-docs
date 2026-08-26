@@ -60,7 +60,7 @@ export class AuthController {
   @ApiOperation({ summary: "Revoke the current refresh session" })
   async logout(@Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<void> {
     await this.auth.logout(readCookie(request, refreshCookieName));
-    response.clearCookie(refreshCookieName, { httpOnly: true, sameSite: "lax", secure: this.secureCookies, path: "/auth" });
+    response.clearCookie(refreshCookieName, { httpOnly: true, sameSite: "lax", secure: this.secureCookies, path: "/" });
   }
 
   @Get("me")
@@ -77,7 +77,7 @@ export class AuthController {
       maxAge: Math.max(0, result.refreshExpiresAt.getTime() - Date.now()),
       sameSite: "lax",
       secure: this.secureCookies,
-      path: "/auth",
+      path: "/",
     });
     return { accessToken: result.accessToken, user: result.user };
   }

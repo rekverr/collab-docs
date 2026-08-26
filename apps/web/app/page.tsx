@@ -1,9 +1,7 @@
-export default function HomePage() {
-  return (
-    <main>
-      <p className="eyebrow">Collab Docs</p>
-      <h1>Project foundation is ready.</h1>
-      <p>The workspace, API, collaboration service, and shared packages are scaffolded.</p>
-    </main>
-  );
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+export default async function HomePage() {
+  const cookieStore = await cookies();
+  redirect(cookieStore.has("collab_docs_refresh") ? "/app" : "/login");
 }
