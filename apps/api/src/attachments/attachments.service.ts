@@ -123,6 +123,15 @@ export class AttachmentsService {
     let finalized: { count: number };
     try {
       finalized = await this.prisma.$transaction(async (transaction) => {
+        const current = await transaction.attachment.findUnique({
+          where: { id: attachment.id },
+          select: { documentId: true, uploadedById: true, status: true },
+        });
+        if (current === null || current.status !== AttachmentStatus.PENDING) {
+          return { count: 0 };
+        }
+        await this.requireDocumentAccess(transaction, userId, current.documentId, "finalize");
+        assertUploadOwner(userId, current.uploadedById);
         await this.quota.assertStorageWithinLimit(transaction, attachment.workspaceId);
         return transaction.attachment.updateMany({
           where: { id: attachment.id, status: AttachmentStatus.PENDING },

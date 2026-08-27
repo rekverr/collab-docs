@@ -51,7 +51,13 @@ describe("safe public document rendering", () => {
   });
 
   it("rejects javascript and data image URLs", () => {
-    for (const url of ["javascript:alert(1)", "data:image/svg+xml,<svg onload=alert(1) />"]) {
+    for (const url of [
+      "javascript:alert(1)",
+      "data:image/svg+xml,<svg onload=alert(1) />",
+      "http://localhost:3000/admin",
+      "https://127.0.0.1/internal",
+      "https://192.168.1.20/private",
+    ]) {
       assert.throws(
         () =>
           parsePublicDocument(

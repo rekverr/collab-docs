@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { DocumentAccessMode } from "@prisma/client";
 import { hashShareToken, isActiveShareLink } from "../document-sharing/share-access";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
@@ -6,6 +6,7 @@ import { PolicyService } from "./policy.service";
 
 export interface CollaborationAccess {
   documentId: string;
+  workspaceId: string;
   userId: string;
   email: string;
   displayName: string | null;
@@ -24,6 +25,9 @@ export class CollaborationAccessService {
     documentId: string,
     shareToken?: string,
   ): Promise<CollaborationAccess> {
+    if (shareToken !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(shareToken)) {
+      throw new BadRequestException("Invalid document share token");
+    }
     const document = await this.prisma.document.findFirst({
       where: { id: documentId, deletedAt: null, archivedAt: null },
       select: { id: true, workspaceId: true, workspace: { select: { deletedAt: true } } },
@@ -63,6 +67,7 @@ export class CollaborationAccessService {
     }
     return {
       documentId: document.id,
+      workspaceId: document.workspaceId,
       userId: user.id,
       email: user.email,
       displayName: user.displayName,

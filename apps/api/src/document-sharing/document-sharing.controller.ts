@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Post,
@@ -31,6 +32,7 @@ import {
   ShareLinkDto,
 } from "./dto/document-sharing.dto";
 import { ShareLinkRateLimiter } from "./share-link-rate-limiter.service";
+import { PublicSlugPipe } from "./public-slug.pipe";
 
 @ApiTags("document-sharing")
 @Controller()
@@ -112,16 +114,19 @@ export class DocumentSharingController {
   }
 
   @Get("public-documents/:publicSlug")
+  @Header("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=60")
   @ApiOperation({ summary: "Resolve a currently published document projection" })
   @ApiOkResponse({ type: PublishedDocumentDto })
-  resolvePublished(@Param("publicSlug") publicSlug: string): Promise<PublishedDocumentDto> {
+  resolvePublished(
+    @Param("publicSlug", PublicSlugPipe) publicSlug: string,
+  ): Promise<PublishedDocumentDto> {
     return this.sharing.resolvePublished(publicSlug);
   }
 
   @Get("public-documents/:publicSlug/attachments/:attachmentId")
   @ApiOperation({ summary: "Redirect a published attachment to short-lived object storage" })
   async publicAttachment(
-    @Param("publicSlug") publicSlug: string,
+    @Param("publicSlug", PublicSlugPipe) publicSlug: string,
     @Param("attachmentId", ParseUUIDPipe) attachmentId: string,
     @Res() response: Response,
   ): Promise<void> {

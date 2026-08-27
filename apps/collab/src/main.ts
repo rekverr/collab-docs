@@ -5,6 +5,7 @@ import { BullMqProjectionPublisher } from "./downstream.js";
 import { JsonLogger } from "./logger.js";
 import { PrismaCollaborationPersistence } from "./prisma-persistence.js";
 import { Redis } from "ioredis";
+import { parseCollaborationControlEvent } from "./control-events.js";
 
 const port = parsePort(process.env.COLLAB_PORT ?? "3002");
 const internalApiUrl = requireHttpUrl(process.env.INTERNAL_API_URL ?? "http://localhost:3001");
@@ -42,9 +43,16 @@ controlSubscriber.on("error", (error: Error) => {
 });
 controlSubscriber.on("message", (channel: string, message: string) => {
   if (channel !== "collab:document-control") return;
-  const documentId = parseRestoredDocumentId(message);
-  if (documentId !== null) {
-    server.terminateDocument(documentId, "Document restored; reconnecting", 4410);
+  const event = parseCollaborationControlEvent(message);
+  if (event === null) return;
+  if (event.type === "document-unavailable") {
+    server.terminateDocument(event.documentId, "Document was deleted", 4404);
+  } else if (event.type === "document-restored") {
+    server.terminateDocument(event.documentId, "Document restored; reconnecting", 4410);
+  } else if (event.type === "document-access-changed") {
+    void server.reauthorizeDocument(event.documentId);
+  } else {
+    void server.reauthorizeUser(event.userId);
   }
 });
 await controlSubscriber.subscribe("collab:document-control");
@@ -55,18 +63,6 @@ async function shutdown(signal: string): Promise<void> {
   await controlSubscriber.quit();
   await prisma.$disconnect();
   process.exitCode = 0;
-}
-
-function parseRestoredDocumentId(message: string): string | null {
-  try {
-    const value: unknown = JSON.parse(message);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    const type: unknown = Reflect.get(value, "type");
-    const documentId: unknown = Reflect.get(value, "documentId");
-    return type === "restored" && typeof documentId === "string" ? documentId : null;
-  } catch {
-    return null;
-  }
 }
 
 function requireRedisUrl(value: string): string {

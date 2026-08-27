@@ -34,17 +34,30 @@ export function safePublicImageUrl(value: unknown): string | null {
   try {
     const url = new URL(value);
     if (url.username !== "" || url.password !== "") return null;
-    if (url.protocol === "https:") return url.toString();
-    if (
-      url.protocol === "http:" &&
-      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
-    ) {
-      return url.toString();
-    }
+    if (url.protocol === "https:" && !isLocalOrPrivateHost(url.hostname)) return url.toString();
   } catch {
     return null;
   }
   return null;
+}
+
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized === "::1" || normalized.endsWith(".localhost")) {
+    return true;
+  }
+  if (/^127\./.test(normalized) || /^10\./.test(normalized) || /^192\.168\./.test(normalized)) {
+    return true;
+  }
+  if (
+    normalized === "0.0.0.0" ||
+    /^169\.254\./.test(normalized) ||
+    /^(?:fc|fd|fe8|fe9|fea|feb)[0-9a-f:]*$/i.test(normalized)
+  ) {
+    return true;
+  }
+  const private172 = /^172\.(\d{1,3})\./.exec(normalized);
+  return private172 !== null && Number(private172[1]) >= 16 && Number(private172[1]) <= 31;
 }
 
 export function publicDescription(document: PublicDocument): string {

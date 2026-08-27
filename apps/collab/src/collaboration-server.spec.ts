@@ -15,8 +15,11 @@ import type { StructuredLogger } from "./logger.js";
 import { InMemoryCollaborationPersistence } from "./persistence.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
+const workspaceId = "22222222-2222-4222-8222-222222222222";
+const editableShareToken = "a".repeat(43);
 const editor: CollaborationIdentity = {
   documentId,
+  workspaceId,
   userId: "editor",
   email: "editor@example.com",
   displayName: "Editor",
@@ -24,6 +27,7 @@ const editor: CollaborationIdentity = {
 };
 const viewer: CollaborationIdentity = {
   documentId,
+  workspaceId,
   userId: "viewer",
   email: "viewer@example.com",
   displayName: "Viewer",
@@ -51,7 +55,7 @@ class RevocableShareAuthorizer implements CollaborationAuthorizer {
     if (
       token !== "authenticated" ||
       requestedDocumentId !== documentId ||
-      shareToken !== "editable-share-token" ||
+      shareToken !== editableShareToken ||
       !this.active
     ) {
       return Promise.reject(new AuthorizationFailure("permission", "denied"));
@@ -144,6 +148,22 @@ describe("authenticated Yjs collaboration", () => {
     assert.equal(server.metrics.permissionFailuresTotal, 1);
   });
 
+  it("rejects malformed document and share identifiers at the socket boundary", async () => {
+    const { server, url } = await start({ valid: editor });
+    const socket = await connect(url);
+    const closed = onceClose(socket);
+    socket.send(
+      JSON.stringify({
+        type: "auth",
+        documentId: "../document",
+        accessToken: "valid",
+        shareToken: "short",
+      }),
+    );
+    assert.equal(await closed, 1003);
+    assert.equal(server.activeRoomCount(), 0);
+  });
+
   it("rejects a Viewer Yjs write", async () => {
     const { server, url } = await start({ viewer });
     const socket = await connect(url);
@@ -158,19 +178,61 @@ describe("authenticated Yjs collaboration", () => {
     assert.equal(server.metrics.rejectedWritesTotal, 1);
   });
 
-  it("rejects the next write after an editable share token is revoked", async () => {
+  it("immediately closes a connection after its editable share token is revoked", async () => {
     const authorizer = new RevocableShareAuthorizer();
     const { server, url } = await startWithAuthorizer(authorizer);
     const socket = await connect(url);
     const initial = onceBinaryMessage(socket);
-    authenticate(socket, "authenticated", "editable-share-token");
+    authenticate(socket, "authenticated", editableShareToken);
     await initial;
     authorizer.active = false;
+    const closed = onceClose(socket);
+    await server.reauthorizeDocument(documentId);
+    assert.equal(await closed, 4403);
+  });
+
+  it("immediately reauthorizes a downgraded member as read-only", async () => {
+    const mutableEditor = { ...editor };
+    const { server, url } = await start({ valid: mutableEditor });
+    const socket = await connect(url);
+    const initial = onceBinaryMessage(socket);
+    authenticate(socket, "valid");
+    await initial;
+    mutableEditor.canWrite = false;
+    await server.reauthorizeUser(editor.userId);
+
     const source = new Y.Doc();
-    source.getText("content").insert(0, "revoked write");
+    source.getText("content").insert(0, "not allowed after downgrade");
     socket.send(syncUpdateMessage(Y.encodeStateAsUpdate(source)));
     assert.equal(await onceClose(socket), 4403);
     assert.equal(server.metrics.rejectedWritesTotal, 1);
+  });
+
+  it("immediately closes a removed member connection", async () => {
+    const identities: Record<string, CollaborationIdentity> = { valid: editor };
+    const { server, url } = await start(identities);
+    const socket = await connect(url);
+    const initial = onceBinaryMessage(socket);
+    authenticate(socket, "valid");
+    await initial;
+    delete identities.valid;
+
+    const closed = onceClose(socket);
+    await server.reauthorizeUser(editor.userId);
+    assert.equal(await closed, 4403);
+  });
+
+  it("immediately terminates an active deleted document room", async () => {
+    const { server, url } = await start({ valid: editor });
+    const socket = await connect(url);
+    const initial = onceBinaryMessage(socket);
+    authenticate(socket, "valid");
+    await initial;
+
+    const closed = onceClose(socket);
+    server.terminateDocument(documentId, "Document was deleted", 4404);
+    assert.equal(await closed, 4404);
+    assert.equal(server.activeRoomCount(), 0);
   });
 
   it("places two clients in one room and synchronizes a Yjs update", async () => {

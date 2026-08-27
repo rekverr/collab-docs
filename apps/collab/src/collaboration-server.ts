@@ -141,6 +141,27 @@ export class CollaborationServer {
     return this.rooms.size;
   }
 
+  async reauthorizeDocument(documentId: string): Promise<void> {
+    const room = this.rooms.get(documentId);
+    if (room === undefined) return;
+    await Promise.all(
+      [...room.connections].map(([socket, state]) =>
+        this.reauthorizeConnection(socket, state, 4403, "Document access revoked"),
+      ),
+    );
+  }
+
+  async reauthorizeUser(userId: string): Promise<void> {
+    const connections = [...this.rooms.values()].flatMap((room) =>
+      [...room.connections].filter(([, state]) => state.identity.userId === userId),
+    );
+    await Promise.all(
+      connections.map(([socket, state]) =>
+        this.reauthorizeConnection(socket, state, 4403, "Workspace access revoked"),
+      ),
+    );
+  }
+
   private handleConnection(socket: WebSocket): void {
     this.metrics.connectionsTotal += 1;
     this.metrics.activeConnections += 1;
@@ -535,6 +556,30 @@ export class CollaborationServer {
     }, interval);
   }
 
+  private async reauthorizeConnection(
+    socket: WebSocket,
+    state: ConnectionState,
+    failureCode: 4403 | 4404,
+    failureReason: string,
+  ): Promise<void> {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    try {
+      const identity = await this.authorizer.authorize(
+        state.accessToken,
+        state.identity.documentId,
+        state.shareToken,
+      );
+      if (identity.userId !== state.identity.userId) {
+        socket.close(4403, "Document access revoked");
+        return;
+      }
+      state.identity = identity;
+    } catch {
+      this.metrics.permissionFailuresTotal += 1;
+      socket.close(failureCode, failureReason);
+    }
+  }
+
   private protocolFailure(socket: WebSocket, reason: string): void {
     this.metrics.protocolFailuresTotal += 1;
     this.fail(socket, 1003, "Invalid collaboration protocol", reason);
@@ -558,9 +603,10 @@ function parseAuthMessage(value: string): AuthMessage {
   if (
     type !== "auth" ||
     typeof documentId !== "string" ||
+    !isUuid(documentId) ||
     typeof accessToken !== "string" ||
-    (shareToken !== undefined && (typeof shareToken !== "string" || shareToken.length > 256)) ||
-    documentId.length > 128 ||
+    (shareToken !== undefined &&
+      (typeof shareToken !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(shareToken))) ||
     accessToken.length > 4096
   ) {
     throw new Error("invalid auth message");
@@ -571,6 +617,10 @@ function parseAuthMessage(value: string): AuthMessage {
     accessToken,
     ...(typeof shareToken === "string" ? { shareToken } : {}),
   };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function rawData(data: RawData): Uint8Array {

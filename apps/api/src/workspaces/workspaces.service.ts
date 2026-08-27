@@ -12,6 +12,7 @@ import { PolicyService } from "../permissions/policy.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { planCatalog } from "../billing/plan-catalog";
 import { UsageQuotaService } from "../billing/usage-quota.service";
+import { CollaborationControlService } from "../permissions/collaboration-control.service";
 import type {
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
@@ -26,6 +27,7 @@ export class WorkspacesService {
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly quota: UsageQuotaService,
+    private readonly collaborationControl: CollaborationControlService,
   ) {}
 
   create(userId: string, input: CreateWorkspaceDto) {
@@ -217,13 +219,13 @@ export class WorkspacesService {
     });
   }
 
-  updateMemberRole(
+  async updateMemberRole(
     actorId: string,
     workspaceId: string,
     targetUserId: string,
     role: WorkspaceRole,
   ) {
-    return this.prisma.$transaction(async (transaction) => {
+    const membership = await this.prisma.$transaction(async (transaction) => {
       const access = await this.policy.requireWorkspaceCapability(
         actorId,
         workspaceId,
@@ -245,10 +247,12 @@ export class WorkspacesService {
         select: { id: true, workspaceId: true, userId: true, role: true, updatedAt: true },
       });
     });
+    await this.collaborationControl.userAccessChanged(targetUserId);
+    return membership;
   }
 
-  removeMember(actorId: string, workspaceId: string, targetUserId: string): Promise<void> {
-    return this.prisma.$transaction(async (transaction) => {
+  async removeMember(actorId: string, workspaceId: string, targetUserId: string): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
       const access = await this.policy.requireWorkspaceCapability(
         actorId,
         workspaceId,
@@ -265,5 +269,6 @@ export class WorkspacesService {
         throw new ForbiddenException("Only the workspace owner can manage administrators");
       await transaction.workspaceMember.delete({ where: { id: target.id } });
     });
+    await this.collaborationControl.userAccessChanged(targetUserId);
   }
 }

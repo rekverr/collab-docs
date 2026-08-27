@@ -1,5 +1,6 @@
 export interface CollaborationIdentity {
   documentId: string;
+  workspaceId: string;
   userId: string;
   email: string;
   displayName: string | null;
@@ -81,6 +82,7 @@ export class ApiCollaborationAuthorizer implements CollaborationAuthorizer {
     }
     const identity = {
       documentId: stringField(body, "documentId"),
+      workspaceId: stringField(body, "workspaceId"),
       userId: stringField(body, "userId"),
       email: stringField(body, "email"),
       displayName,

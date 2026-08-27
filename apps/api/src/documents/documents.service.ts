@@ -5,6 +5,7 @@ import { PolicyService } from "../permissions/policy.service";
 import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
 import { SearchIndexService } from "../search/search-index.service";
 import { UsageQuotaService } from "../billing/usage-quota.service";
+import { CollaborationControlService } from "../permissions/collaboration-control.service";
 import {
   appendedSortKey,
   assertExactSiblingOrder,
@@ -45,6 +46,7 @@ export class DocumentsService {
     private readonly revalidation: PublicRevalidationService,
     private readonly searchIndex: SearchIndexService,
     private readonly quota: UsageQuotaService,
+    private readonly collaborationControl: CollaborationControlService,
   ) {}
 
   async create(
@@ -244,6 +246,7 @@ export class DocumentsService {
       const { publicSlug, ...metadata } = restored;
       return { metadata, publicSlug };
     });
+    await this.collaborationControl.documentRestored(documentId);
     if (outcome.publicSlug !== null) {
       await this.revalidation.enqueueBestEffort(
         documentId,
@@ -280,6 +283,7 @@ export class DocumentsService {
       const { publicSlug, ...metadata } = changed;
       return { metadata, publicSlug };
     });
+    await this.collaborationControl.documentUnavailable(documentId);
     if (outcome.publicSlug !== null) {
       await this.revalidation.enqueueBestEffort(
         documentId,

@@ -20,6 +20,7 @@ export class RequestObservabilityMiddleware implements NestMiddleware {
       suppliedId !== undefined && validRequestId.test(suppliedId) ? suppliedId : randomUUID();
     const startedAt = process.hrtime.bigint();
     response.setHeader("x-request-id", requestId);
+    response.setHeader("cache-control", "private, no-store");
 
     runWithRequestId(requestId, () => {
       response.once("finish", () => {

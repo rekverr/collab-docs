@@ -16,7 +16,8 @@ describe("collaboration provider helpers", () => {
 
   it("only accepts browser-safe image integration URLs", () => {
     assert.equal(isSafeImageUrl("https://images.example.test/photo.png"), true);
-    assert.equal(isSafeImageUrl("http://localhost:9000/local.png"), true);
+    assert.equal(isSafeImageUrl("http://localhost:9000/local.png"), false);
+    assert.equal(isSafeImageUrl("https://user:secret@example.test/photo.png"), false);
     assert.equal(isSafeImageUrl("javascript:alert(1)"), false);
     assert.equal(isSafeImageUrl("data:image/svg+xml,<svg></svg>"), false);
   });

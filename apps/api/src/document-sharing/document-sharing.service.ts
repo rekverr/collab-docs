@@ -12,6 +12,7 @@ import type { AppEnvironment } from "../common/config/environment";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
+import { CollaborationControlService } from "../permissions/collaboration-control.service";
 import type {
   CreateShareLinkDto,
   DocumentSharingStateDto,
@@ -40,6 +41,7 @@ export class DocumentSharingService {
     private readonly policy: PolicyService,
     private readonly storage: ObjectStorageService,
     private readonly revalidation: PublicRevalidationService,
+    private readonly collaborationControl: CollaborationControlService,
     config: ConfigService<AppEnvironment, true>,
   ) {
     this.webUrl = config.getOrThrow("WEB_URL", { infer: true }).replace(/\/$/, "");
@@ -125,6 +127,7 @@ export class DocumentSharingService {
         select: shareLinkSelect,
       });
     });
+    await this.collaborationControl.documentAccessChanged(link.documentId);
     return mapLink(link, null);
   }
 
@@ -148,6 +151,7 @@ export class DocumentSharingService {
         select: shareLinkSelect,
       });
     });
+    await this.collaborationControl.documentAccessChanged(replacement.documentId);
     return mapLink(replacement, this.shareUrl(token));
   }
 
