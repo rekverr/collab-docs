@@ -49,6 +49,23 @@ export interface DocumentTreeNode extends DocumentMetadata {
   children: DocumentTreeNode[];
 }
 
+export interface SearchDocumentResult {
+  documentId: string;
+  workspaceId: string;
+  parentId: string | null;
+  title: string;
+  snippet: string | null;
+  rank: number;
+  updatedAt: string;
+}
+
+export interface SearchDocumentsResponse {
+  items: SearchDocumentResult[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export type DocumentProjectionBlock =
   | { id: string; type: "paragraph"; text: string }
   | { id: string; type: "heading"; level: 1 | 2 | 3; text: string }

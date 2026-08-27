@@ -15,6 +15,7 @@ import {
   parseDocumentVersionPreview,
   parseDocumentVersions,
   parseRestoreDocumentVersionResult,
+  parseSearchDocumentsResponse,
   parseMentionCandidates,
   parseNotification,
   parseNotifications,
@@ -38,6 +39,7 @@ import type {
   DocumentVersion,
   DocumentVersionPreview,
   RestoreDocumentVersionResult,
+  SearchDocumentsResponse,
   UserNotification,
   WorkspaceSummary,
 } from "./types";
@@ -166,6 +168,25 @@ export const documentApi = {
       method: "DELETE",
       headers: authorization(token),
     });
+  },
+};
+
+export const searchApi = {
+  documents(
+    token: string,
+    workspaceId: string,
+    input: { query: string; page: number; limit?: number; signal?: AbortSignal },
+  ): Promise<SearchDocumentsResponse> {
+    const parameters = new URLSearchParams({
+      query: input.query,
+      page: String(input.page),
+      limit: String(input.limit ?? 10),
+    });
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/search?${parameters.toString()}`,
+      parseSearchDocumentsResponse,
+      { headers: authorization(token), signal: input.signal },
+    );
   },
 };
 

@@ -5,6 +5,7 @@ import {
   parseAuthResponse,
   parseDocumentTree,
   parseDocumentVersionPreview,
+  parseSearchDocumentsResponse,
   parseWorkspaceMembers,
   parseWorkspaces,
 } from "./parsers";
@@ -43,6 +44,29 @@ describe("frontend API boundary", () => {
 
     assert.equal(members[0]?.user.displayName, "Person");
     assert.throws(() => parseWorkspaceMembers([{ role: "ROOT" }]), TypeError);
+  });
+
+  it("parses paginated workspace search results", () => {
+    const result = parseSearchDocumentsResponse({
+      items: [
+        {
+          documentId: "document-1",
+          workspaceId: "workspace-1",
+          parentId: null,
+          title: "Roadmap",
+          snippet: "Quarterly roadmap",
+          rank: 0.8,
+          updatedAt: "2026-08-27T10:00:00.000Z",
+        },
+      ],
+      page: 1,
+      limit: 10,
+      hasMore: false,
+    });
+
+    assert.equal(result.items[0]?.title, "Roadmap");
+    assert.equal(result.hasMore, false);
+    assert.throws(() => parseSearchDocumentsResponse({ items: [], page: "1" }), TypeError);
   });
 
   it("rejects malformed API data instead of trusting compile-time types", () => {

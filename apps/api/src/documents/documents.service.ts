@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
+import { SearchIndexService } from "../search/search-index.service";
 import {
   appendedSortKey,
   assertExactSiblingOrder,
@@ -41,14 +42,15 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly revalidation: PublicRevalidationService,
+    private readonly searchIndex: SearchIndexService,
   ) {}
 
-  create(
+  async create(
     userId: string,
     workspaceId: string,
     input: CreateDocumentDto,
   ): Promise<DocumentMetadataDto> {
-    return this.prisma.$transaction(async (transaction) => {
+    const document = await this.prisma.$transaction(async (transaction) => {
       await this.policy.requireWorkspaceCapability(
         userId,
         workspaceId,
@@ -74,6 +76,8 @@ export class DocumentsService {
         select: metadataSelect,
       });
     });
+    await this.searchIndex.enqueueBestEffort(document.id, document.updatedAt.getTime());
+    return document;
   }
 
   async get(userId: string, documentId: string): Promise<DocumentMetadataDto> {
@@ -105,12 +109,12 @@ export class DocumentsService {
     return roots;
   }
 
-  update(
+  async update(
     userId: string,
     documentId: string,
     input: UpdateDocumentMetadataDto,
   ): Promise<DocumentMetadataDto> {
-    return this.prisma.$transaction(async (transaction) => {
+    const document = await this.prisma.$transaction(async (transaction) => {
       const document = await this.requireVisibleDocument(transaction, documentId);
       await this.policy.requireWorkspaceCapability(
         userId,
@@ -124,6 +128,8 @@ export class DocumentsService {
         select: metadataSelect,
       });
     });
+    await this.searchIndex.enqueueBestEffort(document.id, document.updatedAt.getTime());
+    return document;
   }
 
   move(userId: string, documentId: string, input: MoveDocumentDto): Promise<DocumentMetadataDto> {
@@ -239,6 +245,7 @@ export class DocumentsService {
         "restored",
       );
     }
+    await this.searchIndex.enqueueBestEffort(documentId, outcome.metadata.updatedAt.getTime());
     return outcome.metadata;
   }
 
@@ -274,6 +281,7 @@ export class DocumentsService {
         action === "archive" ? "archived" : "deleted",
       );
     }
+    await this.searchIndex.enqueueBestEffort(documentId, outcome.metadata.updatedAt.getTime());
     return outcome.metadata;
   }
 

@@ -133,6 +133,7 @@ model Workspace {
   notifications Notification[]
   subscription  Subscription?
   billingEvents BillingEvent[]
+  searchIndexes DocumentSearchIndex[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -211,11 +212,29 @@ model Document {
   comments      Comment[]
   notifications Notification[]
   attachments   Attachment[]
+  searchIndex   DocumentSearchIndex?
 
   @@unique([id, workspaceId])
   @@index([workspaceId, parentId, deletedAt, sortKey])
   @@index([workspaceId, publicationState, deletedAt])
   @@index([createdById])
+}
+
+model DocumentSearchIndex {
+  documentId         String                  @id @db.Uuid
+  workspaceId        String                  @db.Uuid
+  title              String                  @db.VarChar(500)
+  content            String                  @db.Text
+  projectionSequence BigInt
+  sourceUpdatedAt    DateTime
+  indexedAt          DateTime                @default(now())
+  searchVector       Unsupported("tsvector")
+
+  document  Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, indexedAt])
+  @@map("document_search_index")
 }
 
 model DocumentAccessGrant {

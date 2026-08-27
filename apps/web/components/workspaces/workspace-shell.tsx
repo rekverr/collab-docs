@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useSessionState } from "../auth/session-provider";
 import { workspaceApi } from "../../lib/api/client";
 import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceSummary } from "../../lib/api/types";
 import { NotificationCenter } from "../notifications/notification-center";
+import { WorkspaceSearch } from "../search/workspace-search";
 
 export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) {
   const session = useSessionState();
@@ -66,6 +67,11 @@ export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) 
             </strong>
             {session.user !== null && <span className="header-email">{session.user.email}</span>}
           </div>
+          {session.ready && (
+            <Suspense fallback={<div className="workspace-search-placeholder" />}>
+              <WorkspaceSearch />
+            </Suspense>
+          )}
           <div className="app-header-actions">
             {session.ready && <NotificationCenter />}
             <button

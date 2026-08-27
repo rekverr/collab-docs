@@ -7,6 +7,7 @@ export class MetricsService {
   private readonly requestCount: Counter<"method" | "route" | "status_code">;
   private readonly requestDuration: Histogram<"method" | "route" | "status_code">;
   private readonly publicRevalidationCount: Counter<"status">;
+  private readonly searchIndexCount: Counter<"status">;
 
   constructor() {
     collectDefaultMetrics({ prefix: "collab_docs_api_", register: this.registry });
@@ -29,10 +30,20 @@ export class MetricsService {
       labelNames: ["status"],
       registers: [this.registry],
     });
+    this.searchIndexCount = new Counter({
+      name: "collab_docs_api_search_index_jobs_total",
+      help: "Document search indexing jobs by outcome",
+      labelNames: ["status"],
+      registers: [this.registry],
+    });
   }
 
   recordPublicRevalidation(status: string): void {
     this.publicRevalidationCount.inc({ status });
+  }
+
+  recordSearchIndexing(status: string): void {
+    this.searchIndexCount.inc({ status });
   }
 
   observeHttpRequest(

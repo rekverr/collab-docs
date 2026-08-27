@@ -18,6 +18,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
 import { DocumentSharingModule } from "./document-sharing/document-sharing.module";
 import { PublicRevalidationModule } from "./public-revalidation/public-revalidation.module";
+import { SearchModule } from "./search/search.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PublicRevalidationModule } from "./public-revalidation/public-revalidat
     QueueModule,
     MetricsModule,
     PublicRevalidationModule,
+    SearchModule,
     HealthModule,
     AuthModule,
     PermissionsModule,

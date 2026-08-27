@@ -20,6 +20,8 @@ import type {
   DocumentComment,
   NotificationType,
   RestoreDocumentVersionResult,
+  SearchDocumentResult,
+  SearchDocumentsResponse,
   UserNotification,
   WorkspaceRole,
   WorkspaceMember,
@@ -158,6 +160,32 @@ export function parseDocumentTreeNode(value: unknown): DocumentTreeNode {
 export function parseDocumentTree(value: unknown): DocumentTreeNode[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid document tree response");
   return value.map(parseDocumentTreeNode);
+}
+
+export function parseSearchDocumentResult(value: unknown): SearchDocumentResult {
+  const data = record(value, "search result");
+  return {
+    documentId: string(field(data, "documentId"), "search result"),
+    workspaceId: string(field(data, "workspaceId"), "search result"),
+    parentId: nullableString(field(data, "parentId"), "search result"),
+    title: string(field(data, "title"), "search result"),
+    snippet: nullableString(field(data, "snippet"), "search result"),
+    rank: number(field(data, "rank"), "search result"),
+    updatedAt: string(field(data, "updatedAt"), "search result"),
+  };
+}
+
+export function parseSearchDocumentsResponse(value: unknown): SearchDocumentsResponse {
+  const data = record(value, "search response");
+  const items = field(data, "items");
+  const page = number(field(data, "page"), "search response");
+  const limit = number(field(data, "limit"), "search response");
+  const hasMore = field(data, "hasMore");
+  if (!Array.isArray(items) || !Number.isInteger(page) || !Number.isInteger(limit)) {
+    throw new TypeError("Invalid search response");
+  }
+  if (typeof hasMore !== "boolean") throw new TypeError("Invalid search response");
+  return { items: items.map(parseSearchDocumentResult), page, limit, hasMore };
 }
 
 export function parseDocumentVersion(value: unknown): DocumentVersion {
