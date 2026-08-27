@@ -5,6 +5,7 @@ import {
   parseAuthResponse,
   parseDocumentTree,
   parseDocumentVersionPreview,
+  parseWorkspaceMembers,
   parseWorkspaces,
 } from "./parsers";
 
@@ -27,6 +28,21 @@ describe("frontend API boundary", () => {
       },
     ]);
     assert.equal(workspaces[0]?.role, "OWNER");
+  });
+
+  it("parses workspace member summaries for streamed server sections", () => {
+    const members = parseWorkspaceMembers([
+      {
+        id: "membership-1",
+        role: "EDITOR",
+        user: { id: "user-1", email: "person@example.com", displayName: "Person" },
+        createdAt: "2026-08-27T10:00:00.000Z",
+        updatedAt: "2026-08-27T10:00:00.000Z",
+      },
+    ]);
+
+    assert.equal(members[0]?.user.displayName, "Person");
+    assert.throws(() => parseWorkspaceMembers([{ role: "ROOT" }]), TypeError);
   });
 
   it("rejects malformed API data instead of trusting compile-time types", () => {

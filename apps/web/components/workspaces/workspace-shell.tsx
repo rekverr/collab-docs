@@ -2,18 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { useSession } from "../auth/session-provider";
+import { useSessionState } from "../auth/session-provider";
 import { workspaceApi } from "../../lib/api/client";
 import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceSummary } from "../../lib/api/types";
 import { NotificationCenter } from "../notifications/notification-center";
 
 export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) {
-  const session = useSession();
+  const session = useSessionState();
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!session.ready) return;
     let active = true;
     void session
       .withAccessToken(workspaceApi.list)
@@ -58,12 +59,21 @@ export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) 
       <div className="app-content">
         <header className="app-header">
           <div>
-            <strong>{session.user.displayName ?? session.user.email}</strong>
-            <span className="header-email">{session.user.email}</span>
+            <strong>
+              {session.user === null
+                ? "Restoring session…"
+                : (session.user.displayName ?? session.user.email)}
+            </strong>
+            {session.user !== null && <span className="header-email">{session.user.email}</span>}
           </div>
           <div className="app-header-actions">
-            <NotificationCenter />
-            <button className="text-button" type="button" onClick={() => void session.logout()}>
+            {session.ready && <NotificationCenter />}
+            <button
+              className="text-button"
+              disabled={!session.ready}
+              type="button"
+              onClick={() => void session.logout()}
+            >
               Log out
             </button>
           </div>

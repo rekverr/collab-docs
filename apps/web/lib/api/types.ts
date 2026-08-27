@@ -21,6 +21,14 @@ export interface WorkspaceSummary {
   updatedAt: string;
 }
 
+export interface WorkspaceMember {
+  id: string;
+  role: WorkspaceRole;
+  user: CurrentUser;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type DocumentPublicationState = "PRIVATE" | "PUBLISHED";
 export type DocumentAccessMode = "VIEW" | "EDIT";
 

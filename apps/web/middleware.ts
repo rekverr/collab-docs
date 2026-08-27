@@ -1,17 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { refreshCookieName } from "./lib/auth/session-cookies";
+import { privateRedirectTarget, routeAccess } from "./lib/routing/routes";
 
-const authRoutes = new Set(["/login", "/register"]);
-
-export function middleware(request: NextRequest) {
-  const path = request.nextUrl.pathname;
-  const hasRefreshSession = request.cookies.has("collab_docs_refresh");
-  if (path.startsWith("/app") && !hasRefreshSession) {
+export function middleware(request: NextRequest): NextResponse {
+  const access = routeAccess(request.nextUrl.pathname);
+  const hasRefreshSession = request.cookies.has(refreshCookieName);
+  if (access === "private" && !hasRefreshSession) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", path);
+    loginUrl.searchParams.set(
+      "next",
+      privateRedirectTarget(request.nextUrl.pathname, request.nextUrl.search),
+    );
     return NextResponse.redirect(loginUrl);
   }
-  if (authRoutes.has(path) && hasRefreshSession)
+  if (access === "auth" && hasRefreshSession) {
     return NextResponse.redirect(new URL("/app", request.url));
+  }
   return NextResponse.next();
 }
 

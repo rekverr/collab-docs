@@ -15,8 +15,11 @@ import { ApiError, apiErrorMessage } from "../../lib/api/errors";
 import type { CurrentUser } from "../../lib/api/types";
 
 interface SessionContextValue {
-  user: CurrentUser;
+  user: CurrentUser | null;
+  error: string | null;
+  ready: boolean;
   logout(): Promise<void>;
+  retry(): void;
   withAccessToken<T>(operation: (accessToken: string) => Promise<T>): Promise<T>;
 }
 
@@ -35,7 +38,10 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       .refresh()
       .then(async (result) => ({ ...result, user: await authApi.me(result.accessToken) }))
       .then((result) => {
-        if (active) setSession(result);
+        if (active) {
+          setSession(result);
+          router.refresh();
+        }
       })
       .catch((reason: unknown) => {
         if (!active) return;
@@ -82,45 +88,54 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
     [router, session],
   );
 
-  const value = useMemo<SessionContextValue | null>(
-    () =>
-      session === null
-        ? null
-        : {
-            user: session.user,
-            logout,
-            withAccessToken,
-          },
-    [logout, session, withAccessToken],
+  const value = useMemo<SessionContextValue>(
+    () => ({
+      user: session?.user ?? null,
+      error,
+      ready: session !== null,
+      logout,
+      retry: () => setAttempt((current) => current + 1),
+      withAccessToken,
+    }),
+    [error, logout, session, withAccessToken],
   );
 
-  if (error !== null)
-    return (
-      <main className="status-page">
-        <p className="error-message" role="alert">
-          {error}
-        </p>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => setAttempt((value) => value + 1)}
-        >
-          Try again
-        </button>
-      </main>
-    );
-  if (value === null)
-    return (
-      <main className="status-page">
-        <span className="spinner" aria-hidden="true" />
-        <p>Restoring your session…</p>
-      </main>
-    );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
-export function useSession(): SessionContextValue {
+export function SessionGate({ children }: Readonly<{ children: ReactNode }>) {
+  const session = useSessionState();
+  if (session.error !== null) {
+    return (
+      <div className="status-page">
+        <p className="error-message" role="alert">
+          {session.error}
+        </p>
+        <button className="button secondary" type="button" onClick={session.retry}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+  if (!session.ready) {
+    return (
+      <div className="status-page">
+        <span className="spinner" aria-hidden="true" />
+        <p>Restoring your session…</p>
+      </div>
+    );
+  }
+  return children;
+}
+
+export function useSessionState(): SessionContextValue {
   const session = useContext(SessionContext);
   if (session === null) throw new Error("useSession must be used inside SessionProvider");
   return session;
+}
+
+export function useSession(): SessionContextValue & { user: CurrentUser } {
+  const session = useSessionState();
+  if (session.user === null) throw new Error("useSession must be rendered inside SessionGate");
+  return { ...session, user: session.user };
 }

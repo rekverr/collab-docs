@@ -22,6 +22,7 @@ import type {
   RestoreDocumentVersionResult,
   UserNotification,
   WorkspaceRole,
+  WorkspaceMember,
   WorkspaceSummary,
 } from "./types";
 
@@ -85,6 +86,24 @@ export function parseWorkspace(value: unknown): WorkspaceSummary {
 export function parseWorkspaces(value: unknown): WorkspaceSummary[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid workspace list response");
   return value.map(parseWorkspace);
+}
+
+export function parseWorkspaceMember(value: unknown): WorkspaceMember {
+  const data = record(value, "workspace member");
+  const role = string(field(data, "role"), "workspace member");
+  if (!isWorkspaceRole(role)) throw new TypeError("Invalid workspace member response");
+  return {
+    id: string(field(data, "id"), "workspace member"),
+    role,
+    user: parseCurrentUser(field(data, "user")),
+    createdAt: string(field(data, "createdAt"), "workspace member"),
+    updatedAt: string(field(data, "updatedAt"), "workspace member"),
+  };
+}
+
+export function parseWorkspaceMembers(value: unknown): WorkspaceMember[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid workspace member list response");
+  return value.map(parseWorkspaceMember);
 }
 
 const publicationStates: ReadonlySet<string> = new Set(["PRIVATE", "PUBLISHED"]);
