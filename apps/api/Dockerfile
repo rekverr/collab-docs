@@ -15,6 +15,9 @@ RUN pnpm install --frozen-lockfile
 COPY apps/api apps/api
 RUN pnpm --filter @collab-docs/api build
 
+FROM build AS migration
+CMD ["pnpm", "--filter", "@collab-docs/database", "exec", "prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /workspace

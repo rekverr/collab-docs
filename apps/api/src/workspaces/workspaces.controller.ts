@@ -14,25 +14,36 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   AcceptWorkspaceInvitationDto,
+  AcceptedWorkspaceMembershipDto,
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
   UpdateWorkspaceDto,
   UpdateWorkspaceMemberRoleDto,
+  UpdatedWorkspaceMembershipDto,
+  WorkspaceDto,
+  WorkspaceInvitationDto,
+  WorkspaceMemberDto,
 } from "./dto/workspace.dto";
 import { WorkspacesService } from "./workspaces.service";
 
 @ApiTags("workspaces")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "The current role lacks the required capability" })
+@ApiNotFoundResponse({ description: "Workspace, membership, or invitation not found" })
 @UseGuards(AccessTokenGuard)
 @Controller()
 export class WorkspacesController {
@@ -40,20 +51,21 @@ export class WorkspacesController {
 
   @Post("workspaces")
   @ApiOperation({ summary: "Create a workspace owned by the current user" })
-  @ApiCreatedResponse({ description: "Workspace created" })
+  @ApiCreatedResponse({ description: "Workspace created", type: WorkspaceDto })
   create(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateWorkspaceDto) {
     return this.workspaces.create(user.id, input);
   }
 
   @Get("workspaces")
   @ApiOperation({ summary: "List workspaces visible to the current user" })
-  @ApiOkResponse({ description: "Workspace memberships" })
+  @ApiOkResponse({ description: "Workspace memberships", type: [WorkspaceDto] })
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.workspaces.list(user.id);
   }
 
   @Get("workspaces/:workspaceId")
   @ApiOperation({ summary: "Get a workspace" })
+  @ApiOkResponse({ type: WorkspaceDto })
   get(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
@@ -63,6 +75,7 @@ export class WorkspacesController {
 
   @Patch("workspaces/:workspaceId")
   @ApiOperation({ summary: "Update workspace settings" })
+  @ApiOkResponse({ type: WorkspaceDto })
   update(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
@@ -73,6 +86,7 @@ export class WorkspacesController {
 
   @Get("workspaces/:workspaceId/members")
   @ApiOperation({ summary: "List workspace members" })
+  @ApiOkResponse({ type: [WorkspaceMemberDto] })
   listMembers(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
@@ -82,6 +96,7 @@ export class WorkspacesController {
 
   @Post("workspaces/:workspaceId/invitations")
   @ApiOperation({ summary: "Invite a user by email" })
+  @ApiCreatedResponse({ type: WorkspaceInvitationDto })
   invite(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
@@ -92,12 +107,14 @@ export class WorkspacesController {
 
   @Post("workspace-invitations/accept")
   @ApiOperation({ summary: "Accept an invitation for the current account" })
+  @ApiCreatedResponse({ type: AcceptedWorkspaceMembershipDto })
   accept(@CurrentUser() user: AuthenticatedUser, @Body() input: AcceptWorkspaceInvitationDto) {
     return this.workspaces.accept(user, input.token);
   }
 
   @Patch("workspaces/:workspaceId/members/:userId")
   @ApiOperation({ summary: "Change a workspace member role" })
+  @ApiOkResponse({ type: UpdatedWorkspaceMembershipDto })
   updateMemberRole(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,

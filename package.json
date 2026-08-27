@@ -4,10 +4,11 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.6.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev": "node --env-file=.env scripts/run-dev.mjs",
+    "db:migrate": "node --env-file=.env scripts/run-migrations.mjs",
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
     "format": "prettier --write .",

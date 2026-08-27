@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "prisma generate",
-    "lint": "prisma validate",
-    "typecheck": "prisma validate",
+    "build": "node ../../scripts/run-prisma-static.mjs generate",
+    "lint": "node ../../scripts/run-prisma-static.mjs validate",
+    "typecheck": "node ../../scripts/run-prisma-static.mjs validate",
     "test": "node --test"
   },
   "dependencies": {

@@ -3,16 +3,19 @@ import { IsInt, IsString, Length, Max, Min } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class SearchDocumentsQueryDto {
+  @ApiProperty({ minLength: 1, maxLength: 200 })
   @IsString()
   @Length(1, 200)
   query!: string;
 
+  @ApiProperty({ default: 1, minimum: 1, maximum: 10_000 })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(10_000)
   page = 1;
 
+  @ApiProperty({ default: 20, minimum: 1, maximum: 50 })
   @Type(() => Number)
   @IsInt()
   @Min(1)

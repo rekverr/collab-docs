@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { connect } from "node:net";
 
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
@@ -13,6 +14,9 @@ if (database.searchParams.get("schema") !== "collab_docs_e2e") {
 if (redis.pathname === "" || redis.pathname === "/" || redis.pathname === "/0") {
   throw new Error("Refusing E2E setup: TEST_REDIS_URL must use a non-default Redis database");
 }
+
+await requireTcp(database, "PostgreSQL");
+await requireTcp(redis, "Redis");
 
 run(
   [
@@ -40,4 +44,28 @@ function run(argumentsValue, extraEnvironment) {
   });
   if (result.error !== undefined) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+function requireTcp(url, service) {
+  const port = Number(url.port || (url.protocol === "postgresql:" ? 5432 : 6379));
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: url.hostname, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`${service} is not reachable at ${url.hostname}:${port}`));
+    }, 3_000);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve();
+    });
+    socket.once("error", () => {
+      clearTimeout(timer);
+      reject(
+        new Error(
+          `${service} is not reachable at ${url.hostname}:${port}. Start it before pnpm test:e2e.`,
+        ),
+      );
+    });
+  });
 }

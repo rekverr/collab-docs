@@ -13,10 +13,13 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -31,6 +34,9 @@ import {
 
 @ApiTags("attachments")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "Document or attachment capability required" })
+@ApiNotFoundResponse({ description: "Document or attachment not found" })
 @UseGuards(AccessTokenGuard)
 @Controller()
 export class AttachmentsController {

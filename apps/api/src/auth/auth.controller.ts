@@ -12,11 +12,13 @@ import {
 import { ConfigService } from "@nestjs/config";
 import {
   ApiBearerAuth,
+  ApiCookieAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import type { Request, Response } from "express";
@@ -26,6 +28,7 @@ import { AccessTokenGuard } from "./access-token.guard";
 import { AuthService } from "./auth.service";
 import type { AuthResult, AuthenticatedUser, ClientMetadata } from "./auth.types";
 import { CurrentUser } from "./current-user.decorator";
+import { AuthResponseDto, AuthenticatedUserDto } from "./dto/auth-response.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginRateLimiter } from "./login-rate-limiter.service";
@@ -52,7 +55,10 @@ export class AuthController {
 
   @Post("register")
   @ApiOperation({ summary: "Register a user" })
-  @ApiCreatedResponse({ description: "User registered; refresh session set as an HttpOnly cookie" })
+  @ApiCreatedResponse({
+    description: "User registered; refresh session set as an HttpOnly cookie",
+    type: AuthResponseDto,
+  })
   @ApiConflictResponse({ description: "Email already registered" })
   async register(
     @Body() dto: RegisterDto,
@@ -65,8 +71,12 @@ export class AuthController {
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Log in" })
-  @ApiOkResponse({ description: "Authenticated; refresh session set as an HttpOnly cookie" })
+  @ApiOkResponse({
+    description: "Authenticated; refresh session set as an HttpOnly cookie",
+    type: AuthResponseDto,
+  })
   @ApiUnauthorizedResponse({ description: "Invalid credentials" })
+  @ApiTooManyRequestsResponse({ description: "Login rate limit exceeded" })
   async login(
     @Body() dto: LoginDto,
     @Req() request: Request,
@@ -78,8 +88,9 @@ export class AuthController {
 
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
+  @ApiCookieAuth(refreshCookieName)
   @ApiOperation({ summary: "Rotate the refresh session" })
-  @ApiOkResponse({ description: "Refresh session rotated" })
+  @ApiOkResponse({ description: "Refresh session rotated", type: AuthResponseDto })
   @ApiUnauthorizedResponse({ description: "Missing, expired, revoked, or reused refresh session" })
   async refresh(
     @Req() request: Request,
@@ -93,6 +104,7 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiCookieAuth(refreshCookieName)
   @ApiOperation({ summary: "Revoke the current refresh session" })
   async logout(
     @Req() request: Request,
@@ -111,7 +123,7 @@ export class AuthController {
   @UseGuards(AccessTokenGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get the current user" })
-  @ApiOkResponse({ description: "Current authenticated user" })
+  @ApiOkResponse({ description: "Current authenticated user", type: AuthenticatedUserDto })
   @ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
   currentUser(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
     return user;

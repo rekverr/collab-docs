@@ -12,9 +12,12 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -31,6 +34,9 @@ import { DocumentsService } from "./documents.service";
 
 @ApiTags("documents")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "Document capability required" })
+@ApiNotFoundResponse({ description: "Active document or workspace not found" })
 @UseGuards(AccessTokenGuard)
 @Controller()
 export class DocumentsController {
@@ -69,6 +75,7 @@ export class DocumentsController {
 
   @Patch("documents/:documentId")
   @ApiOperation({ summary: "Rename or update document metadata" })
+  @ApiOkResponse({ type: DocumentMetadataDto })
   update(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
@@ -79,6 +86,7 @@ export class DocumentsController {
 
   @Post("documents/:documentId/move")
   @ApiOperation({ summary: "Move a document to a parent and deterministic sibling position" })
+  @ApiOkResponse({ type: DocumentMetadataDto })
   move(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
@@ -89,6 +97,7 @@ export class DocumentsController {
 
   @Post("workspaces/:workspaceId/documents/reorder")
   @ApiOperation({ summary: "Set the exact order of one active sibling set" })
+  @ApiOkResponse({ type: [DocumentMetadataDto] })
   reorder(
     @CurrentUser() user: AuthenticatedUser,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
@@ -99,6 +108,7 @@ export class DocumentsController {
 
   @Post("documents/:documentId/archive")
   @ApiOperation({ summary: "Archive a document" })
+  @ApiOkResponse({ type: DocumentMetadataDto })
   archive(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
@@ -108,6 +118,7 @@ export class DocumentsController {
 
   @Delete("documents/:documentId")
   @ApiOperation({ summary: "Soft-delete a document" })
+  @ApiOkResponse({ type: DocumentMetadataDto })
   delete(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,
@@ -117,6 +128,7 @@ export class DocumentsController {
 
   @Post("documents/:documentId/restore")
   @ApiOperation({ summary: "Restore an archived or soft-deleted document" })
+  @ApiOkResponse({ type: DocumentMetadataDto })
   restore(
     @CurrentUser() user: AuthenticatedUser,
     @Param("documentId", ParseUUIDPipe) documentId: string,

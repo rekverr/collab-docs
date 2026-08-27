@@ -1,5 +1,12 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -8,6 +15,8 @@ import { SearchService } from "./search.service";
 
 @ApiTags("search")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiNotFoundResponse({ description: "Workspace membership not found" })
 @UseGuards(AccessTokenGuard)
 @Controller("workspaces/:workspaceId/search")
 export class SearchController {

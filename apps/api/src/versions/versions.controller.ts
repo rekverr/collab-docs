@@ -2,9 +2,12 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@n
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -19,6 +22,9 @@ import { VersionsService } from "./versions.service";
 
 @ApiTags("document-versions")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "Document write capability required for create or restore" })
+@ApiNotFoundResponse({ description: "Document or version not found" })
 @UseGuards(AccessTokenGuard)
 @Controller("documents/:documentId/versions")
 export class VersionsController {

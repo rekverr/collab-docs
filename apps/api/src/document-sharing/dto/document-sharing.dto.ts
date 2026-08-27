@@ -47,13 +47,15 @@ export class SharedDocumentDto {
   @ApiProperty() title!: string;
   @ApiProperty({ enum: DocumentAccessMode }) accessMode!: DocumentAccessMode;
   @ApiPropertyOptional({ nullable: true }) expiresAt!: Date | null;
-  @ApiPropertyOptional() contentProjection!: unknown;
+  @ApiPropertyOptional({ type: "object", additionalProperties: true, nullable: true })
+  contentProjection!: unknown;
 }
 
 export class PublishedDocumentDto {
   @ApiProperty() documentId!: string;
   @ApiProperty() title!: string;
   @ApiProperty() publicSlug!: string;
-  @ApiPropertyOptional() contentProjection!: unknown;
-  @ApiProperty() projectionUpdatedAt!: Date | null;
+  @ApiPropertyOptional({ type: "object", additionalProperties: true, nullable: true })
+  contentProjection!: unknown;
+  @ApiProperty({ nullable: true }) projectionUpdatedAt!: Date | null;
 }

@@ -39,6 +39,7 @@ export async function createApiApplication(
       .setDescription("REST API for Collab Docs")
       .setVersion("0.1.0")
       .addBearerAuth()
+      .addCookieAuth("collab_docs_refresh")
       .build();
     SwaggerModule.setup("api/docs", app, SwaggerModule.createDocument(app, openApiConfig));
   }

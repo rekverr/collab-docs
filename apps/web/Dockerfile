@@ -13,9 +13,9 @@ COPY packages/database/prisma packages/database/prisma
 RUN pnpm install --frozen-lockfile
 
 COPY apps/web apps/web
-ARG NEXT_PUBLIC_API_URL=http://localhost:3001
+ARG INTERNAL_API_URL=http://api:3001
 ARG NEXT_PUBLIC_COLLAB_URL=ws://localhost:3002
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
 ENV NEXT_PUBLIC_COLLAB_URL=$NEXT_PUBLIC_COLLAB_URL
 RUN pnpm --filter @collab-docs/web build
 

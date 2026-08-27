@@ -13,10 +13,13 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -34,6 +37,9 @@ import {
 
 @ApiTags("comments")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "Comment action is not permitted" })
+@ApiNotFoundResponse({ description: "Document, comment, or thread not found" })
 @UseGuards(AccessTokenGuard)
 @Controller()
 export class CommentsController {

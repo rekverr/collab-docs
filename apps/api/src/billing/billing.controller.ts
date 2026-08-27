@@ -2,9 +2,13 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@n
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
 } from "@nestjs/swagger";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -20,6 +24,10 @@ import {
 
 @ApiTags("billing")
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Missing or invalid access token" })
+@ApiForbiddenResponse({ description: "billing.manage capability required for plan changes" })
+@ApiNotFoundResponse({ description: "Workspace subscription not found" })
+@ApiUnprocessableEntityResponse({ description: "Target plan cannot contain current usage" })
 @UseGuards(AccessTokenGuard)
 @Controller("workspaces/:workspaceId/billing")
 export class BillingController {

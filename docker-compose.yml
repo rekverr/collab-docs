@@ -1,6 +1,6 @@
 name: collab-docs
 
-x-app-environment: &app-environment
+x-api-environment: &api-environment
   NODE_ENV: production
   DATABASE_URL: postgresql://${POSTGRES_USER:-collab_docs}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-collab_docs}
   REDIS_URL: redis://redis:6379
@@ -90,18 +90,32 @@ services:
         mc mb --ignore-existing "local/$${S3_BUCKET}"
     restart: "no"
 
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migration
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-collab_docs}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-collab_docs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      <<: *app-environment
+      <<: *api-environment
       API_PORT: 3001
     ports:
       - "127.0.0.1:${API_PORT:-3001}:3001"
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio-init:
@@ -125,8 +139,12 @@ services:
       context: .
       dockerfile: apps/collab/Dockerfile
     environment:
-      <<: *app-environment
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-collab_docs}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-collab_docs}
+      REDIS_URL: redis://redis:6379
+      INTERNAL_API_URL: http://api:3001
       COLLAB_PORT: 3002
+      CRDT_COMPACT_AFTER_UPDATES: ${CRDT_COMPACT_AFTER_UPDATES:-100}
       DOCUMENT_VERSION_EVERY_UPDATES: ${DOCUMENT_VERSION_EVERY_UPDATES:-50}
     ports:
       - "127.0.0.1:${COLLAB_PORT:-3002}:3002"
@@ -156,13 +174,14 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        INTERNAL_API_URL: http://api:3001
         NEXT_PUBLIC_COLLAB_URL: ${NEXT_PUBLIC_COLLAB_URL:-ws://localhost:3002}
     environment:
-      <<: *app-environment
+      NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+      INTERNAL_API_URL: http://api:3001
+      REVALIDATION_SECRET: ${REVALIDATION_SECRET:-local-development-revalidation-secret-change-me}
       NEXT_PUBLIC_COLLAB_URL: ${NEXT_PUBLIC_COLLAB_URL:-ws://localhost:3002}
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"

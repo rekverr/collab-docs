@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: collab_docs
+          POSTGRES_PASSWORD: local-development-only
+          POSTGRES_DB: collab_docs
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U collab_docs -d collab_docs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://collab_docs:local-development-only@127.0.0.1:5432/collab_docs
+      REDIS_URL: redis://127.0.0.1:6379
+      TEST_DATABASE_URL: postgresql://collab_docs:local-development-only@127.0.0.1:5432/collab_docs?schema=collab_docs_e2e
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Integration and E2E tests
+        run: pnpm test:e2e
+
+      - name: Build applications and packages
+        run: pnpm build
+
+      - name: Validate Docker Compose
+        run: docker compose config
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose build
