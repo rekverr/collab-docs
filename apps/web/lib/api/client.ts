@@ -4,6 +4,7 @@ import {
   parseAttachmentDownload,
   parseAttachmentUpload,
   parseAuthResponse,
+  parseChangePlanResult,
   parseCurrentUser,
   parseCommentThreads,
   parseDocument,
@@ -20,6 +21,7 @@ import {
   parseNotification,
   parseNotifications,
   parseWorkspace,
+  parseWorkspaceSubscription,
   parseWorkspaces,
 } from "./parsers";
 import type {
@@ -27,6 +29,8 @@ import type {
   AttachmentDownload,
   AttachmentUploadRequest,
   AuthResponse,
+  BillingPlan,
+  ChangePlanResult,
   CurrentUser,
   CommentAuthor,
   CommentThread,
@@ -42,6 +46,7 @@ import type {
   SearchDocumentsResponse,
   UserNotification,
   WorkspaceSummary,
+  WorkspaceSubscription,
 } from "./types";
 
 const apiBase = "/api/backend";
@@ -117,6 +122,27 @@ export const workspaceApi = {
       headers: authorization(token),
       body: JSON.stringify(input),
     });
+  },
+};
+
+export const billingApi = {
+  current(token: string, workspaceId: string): Promise<WorkspaceSubscription> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/billing/subscription`,
+      parseWorkspaceSubscription,
+      { headers: authorization(token) },
+    );
+  },
+  checkout(token: string, workspaceId: string, plan: BillingPlan): Promise<ChangePlanResult> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/billing/checkout`,
+      parseChangePlanResult,
+      {
+        method: "POST",
+        headers: authorization(token),
+        body: JSON.stringify({ plan }),
+      },
+    );
   },
 };
 

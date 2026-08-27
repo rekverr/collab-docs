@@ -19,6 +19,7 @@ import { AttachmentsModule } from "./attachments/attachments.module";
 import { DocumentSharingModule } from "./document-sharing/document-sharing.module";
 import { PublicRevalidationModule } from "./public-revalidation/public-revalidation.module";
 import { SearchModule } from "./search/search.module";
+import { BillingModule } from "./billing/billing.module";
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SearchModule } from "./search/search.module";
     MetricsModule,
     PublicRevalidationModule,
     SearchModule,
+    BillingModule,
     HealthModule,
     AuthModule,
     PermissionsModule,

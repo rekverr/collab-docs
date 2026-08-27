@@ -4,6 +4,8 @@ import type {
   AttachmentStatus,
   AttachmentUploadRequest,
   AuthResponse,
+  BillingPlan,
+  ChangePlanResult,
   CommentAuthor,
   CommentThread,
   CurrentUser,
@@ -22,9 +24,11 @@ import type {
   RestoreDocumentVersionResult,
   SearchDocumentResult,
   SearchDocumentsResponse,
+  SubscriptionStatus,
   UserNotification,
   WorkspaceRole,
   WorkspaceMember,
+  WorkspaceSubscription,
   WorkspaceSummary,
 } from "./types";
 
@@ -88,6 +92,69 @@ export function parseWorkspace(value: unknown): WorkspaceSummary {
 export function parseWorkspaces(value: unknown): WorkspaceSummary[] {
   if (!Array.isArray(value)) throw new TypeError("Invalid workspace list response");
   return value.map(parseWorkspace);
+}
+
+const billingPlans: ReadonlySet<string> = new Set(["FREE", "PRO", "TEAM"]);
+const subscriptionStatuses: ReadonlySet<string> = new Set(["ACTIVE", "PAST_DUE", "CANCELED"]);
+
+function isBillingPlan(value: string): value is BillingPlan {
+  return billingPlans.has(value);
+}
+
+function isSubscriptionStatus(value: string): value is SubscriptionStatus {
+  return subscriptionStatuses.has(value);
+}
+
+function byteString(value: unknown): string {
+  const result = string(value, "storage usage");
+  if (!/^\d+$/.test(result)) throw new TypeError("Invalid storage usage response");
+  return result;
+}
+
+function parseResourceUsage(value: unknown, label: string) {
+  const data = record(value, label);
+  const used = number(field(data, "used"), label);
+  const limit = number(field(data, "limit"), label);
+  if (!Number.isInteger(used) || !Number.isInteger(limit) || used < 0 || limit < 0) {
+    throw new TypeError(`Invalid ${label} response`);
+  }
+  return { used, limit };
+}
+
+export function parseWorkspaceSubscription(value: unknown): WorkspaceSubscription {
+  const data = record(value, "subscription");
+  const plan = string(field(data, "plan"), "subscription");
+  const status = string(field(data, "status"), "subscription");
+  if (!isBillingPlan(plan) || !isSubscriptionStatus(status)) {
+    throw new TypeError("Invalid subscription response");
+  }
+  return {
+    id: string(field(data, "id"), "subscription"),
+    workspaceId: string(field(data, "workspaceId"), "subscription"),
+    plan,
+    status,
+    members: parseResourceUsage(field(data, "members"), "member usage"),
+    documents: parseResourceUsage(field(data, "documents"), "document usage"),
+    storage: {
+      usedBytes: byteString(field(record(field(data, "storage"), "storage usage"), "usedBytes")),
+      limitBytes: byteString(field(record(field(data, "storage"), "storage usage"), "limitBytes")),
+    },
+    currentPeriodStart: nullableString(field(data, "currentPeriodStart"), "subscription"),
+    currentPeriodEnd: nullableString(field(data, "currentPeriodEnd"), "subscription"),
+    updatedAt: string(field(data, "updatedAt"), "subscription"),
+  };
+}
+
+export function parseChangePlanResult(value: unknown): ChangePlanResult {
+  const data = record(value, "plan change");
+  const applied = field(data, "applied");
+  if (typeof applied !== "boolean") throw new TypeError("Invalid plan change response");
+  return {
+    checkoutId: string(field(data, "checkoutId"), "plan change"),
+    eventId: string(field(data, "eventId"), "plan change"),
+    applied,
+    subscription: parseWorkspaceSubscription(field(data, "subscription")),
+  };
 }
 
 export function parseWorkspaceMember(value: unknown): WorkspaceMember {

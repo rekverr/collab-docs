@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { ApiError, apiErrorMessage, isApiErrorBody } from "./errors";
 import {
   parseAuthResponse,
+  parseChangePlanResult,
   parseDocumentTree,
   parseDocumentVersionPreview,
   parseSearchDocumentsResponse,
@@ -67,6 +68,39 @@ describe("frontend API boundary", () => {
     assert.equal(result.items[0]?.title, "Roadmap");
     assert.equal(result.hasMore, false);
     assert.throws(() => parseSearchDocumentsResponse({ items: [], page: "1" }), TypeError);
+  });
+
+  it("parses billing usage and plan changes at the API boundary", () => {
+    const result = parseChangePlanResult({
+      checkoutId: "checkout-1",
+      eventId: "event-1",
+      applied: true,
+      subscription: {
+        id: "subscription-1",
+        workspaceId: "workspace-1",
+        plan: "PRO",
+        status: "ACTIVE",
+        members: { used: 2, limit: 25 },
+        documents: { used: 10, limit: 1000 },
+        storage: { usedBytes: "1024", limitBytes: "5368709120" },
+        currentPeriodStart: "2026-08-27T10:00:00.000Z",
+        currentPeriodEnd: "2026-09-26T10:00:00.000Z",
+        updatedAt: "2026-08-27T10:00:00.000Z",
+      },
+    });
+
+    assert.equal(result.subscription.plan, "PRO");
+    assert.equal(result.subscription.storage.usedBytes, "1024");
+    assert.throws(
+      () =>
+        parseChangePlanResult({
+          checkoutId: "checkout-1",
+          eventId: "event-1",
+          applied: true,
+          subscription: { plan: "UNLIMITED" },
+        }),
+      TypeError,
+    );
   });
 
   it("rejects malformed API data instead of trusting compile-time types", () => {

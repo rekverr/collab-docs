@@ -4,6 +4,7 @@ import { ApiError } from "../../lib/api/errors";
 import { serverWorkspaceApi } from "../../lib/api/server-client";
 import type { DocumentTreeNode, WorkspaceMember } from "../../lib/api/types";
 import { SessionGate } from "../auth/session-provider";
+import { BillingSettings } from "../billing/billing-settings";
 import { DocumentNavigation } from "../documents/document-navigation";
 import { WorkspaceSettingsForm } from "./workspace-settings-form";
 
@@ -23,6 +24,9 @@ export function WorkspaceDashboard({ workspaceId }: Readonly<{ workspaceId: stri
         </Suspense>
         <Suspense fallback={<DashboardCardSkeleton label="Member summary" />}>
           <MemberSummarySection workspaceId={workspaceId} />
+        </Suspense>
+        <Suspense fallback={<DashboardCardSkeleton label="Plan and usage" />}>
+          <BillingSection workspaceId={workspaceId} />
         </Suspense>
       </div>
     </section>
@@ -126,6 +130,19 @@ async function MemberSummarySection({ workspaceId }: Readonly<{ workspaceId: str
     );
   } catch (error: unknown) {
     return <DashboardSectionError error={error} title="Member summary" />;
+  }
+}
+
+async function BillingSection({ workspaceId }: Readonly<{ workspaceId: string }>) {
+  try {
+    const workspace = await serverWorkspaceApi.get(workspaceId);
+    return (
+      <SessionGate>
+        <BillingSettings workspaceId={workspaceId} canManage={workspace.role === "OWNER"} />
+      </SessionGate>
+    );
+  } catch (error: unknown) {
+    return <DashboardSectionError error={error} title="Plan and usage" />;
   }
 }
 

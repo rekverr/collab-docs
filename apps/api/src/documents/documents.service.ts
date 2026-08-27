@@ -4,6 +4,7 @@ import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import { PublicRevalidationService } from "../public-revalidation/public-revalidation.service";
 import { SearchIndexService } from "../search/search-index.service";
+import { UsageQuotaService } from "../billing/usage-quota.service";
 import {
   appendedSortKey,
   assertExactSiblingOrder,
@@ -43,6 +44,7 @@ export class DocumentsService {
     private readonly policy: PolicyService,
     private readonly revalidation: PublicRevalidationService,
     private readonly searchIndex: SearchIndexService,
+    private readonly quota: UsageQuotaService,
   ) {}
 
   async create(
@@ -57,6 +59,7 @@ export class DocumentsService {
         "document.create",
         transaction,
       );
+      await this.quota.assertDocumentCapacity(transaction, workspaceId);
       const parentId = input.parentId ?? null;
       if (parentId !== null) await this.requireActiveParent(transaction, parentId, workspaceId);
       const last = await transaction.document.findFirst({
@@ -228,6 +231,9 @@ export class DocumentsService {
         "document.delete",
         transaction,
       );
+      if (document.deletedAt !== null) {
+        await this.quota.assertDocumentCapacity(transaction, document.workspaceId);
+      }
       if (document.parentId !== null)
         await this.requireActiveParent(transaction, document.parentId, document.workspaceId);
       const restored = await transaction.document.update({

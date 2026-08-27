@@ -5,6 +5,38 @@ export interface CurrentUser {
 }
 
 export type WorkspaceRole = "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
+export type BillingPlan = "FREE" | "PRO" | "TEAM";
+export type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "CANCELED";
+
+export interface ResourceUsage {
+  used: number;
+  limit: number;
+}
+
+export interface StorageUsage {
+  usedBytes: string;
+  limitBytes: string;
+}
+
+export interface WorkspaceSubscription {
+  id: string;
+  workspaceId: string;
+  plan: BillingPlan;
+  status: SubscriptionStatus;
+  members: ResourceUsage;
+  documents: ResourceUsage;
+  storage: StorageUsage;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  updatedAt: string;
+}
+
+export interface ChangePlanResult {
+  checkoutId: string;
+  eventId: string;
+  applied: boolean;
+  subscription: WorkspaceSubscription;
+}
 
 export interface AuthResponse {
   accessToken: string;

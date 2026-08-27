@@ -10,6 +10,8 @@ import { InvitationStatus, Plan, SubscriptionStatus, WorkspaceRole } from "@pris
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { planCatalog } from "../billing/plan-catalog";
+import { UsageQuotaService } from "../billing/usage-quota.service";
 import type {
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
@@ -23,9 +25,11 @@ export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
+    private readonly quota: UsageQuotaService,
   ) {}
 
   create(userId: string, input: CreateWorkspaceDto) {
+    const limits = planCatalog[Plan.FREE];
     return this.prisma.$transaction(async (transaction) => {
       const workspace = await transaction.workspace.create({
         data: { name: input.name.trim(), slug: input.slug, ownerId: userId },
@@ -46,9 +50,9 @@ export class WorkspacesService {
           workspaceId: workspace.id,
           plan: Plan.FREE,
           status: SubscriptionStatus.ACTIVE,
-          memberLimit: 5,
-          documentLimit: 100,
-          storageLimitBytes: 104857600n,
+          memberLimit: limits.members,
+          documentLimit: limits.documents,
+          storageLimitBytes: limits.storageBytes,
         },
       });
       return { ...workspace, role: WorkspaceRole.OWNER };
@@ -162,6 +166,7 @@ export class WorkspacesService {
       });
       if (pending !== null)
         throw new ConflictException("A pending invitation already exists for this email");
+      await this.quota.assertInvitationCapacity(transaction, workspaceId);
       const invitation = await transaction.workspaceInvitation.create({
         data: { workspaceId, email, role: input.role, tokenHash, expiresAt, invitedById: userId },
         select: {
@@ -193,6 +198,7 @@ export class WorkspacesService {
         where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: user.id } },
       });
       if (existing !== null) throw new ConflictException("User is already a workspace member");
+      await this.quota.assertMemberCapacity(transaction, invitation.workspaceId);
       const claimed = await transaction.workspaceInvitation.updateMany({
         where: { id: invitation.id, status: InvitationStatus.PENDING, expiresAt: { gt: now } },
         data: { status: InvitationStatus.ACCEPTED, acceptedById: user.id, acceptedAt: now },

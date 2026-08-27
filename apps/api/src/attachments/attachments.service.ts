@@ -5,14 +5,15 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { AttachmentStatus, Prisma, SubscriptionStatus } from "@prisma/client";
+import { AttachmentStatus, Prisma } from "@prisma/client";
+import { QuotaExceededError } from "../billing/quota-error";
+import { UsageQuotaService } from "../billing/usage-quota.service";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import {
   assertSupportedAttachment,
   assertUploadOwner,
   attachmentCapability,
-  hasStorageQuota,
   normalizeFileName,
 } from "./attachment-rules";
 import type {
@@ -47,6 +48,7 @@ export class AttachmentsService {
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly storage: ObjectStorageService,
+    private readonly quota: UsageQuotaService,
   ) {}
 
   async requestUpload(
@@ -59,36 +61,8 @@ export class AttachmentsService {
     const expiresAt = new Date(Date.now() + uploadLifetimeMs);
     const attachment = await this.prisma.$transaction(async (transaction) => {
       const document = await this.requireDocumentAccess(transaction, userId, documentId, "create");
-      const subscription = await transaction.subscription.findUnique({
-        where: { workspaceId: document.workspaceId },
-        select: { status: true, storageLimitBytes: true },
-      });
-      if (subscription === null || subscription.status !== SubscriptionStatus.ACTIVE) {
-        throw new UnprocessableEntityException("An active subscription is required for uploads");
-      }
       const requestedBytes = BigInt(input.sizeBytes);
-      const workspace = await transaction.workspace.findUnique({
-        where: { id: document.workspaceId },
-        select: { storageUsedBytes: true },
-      });
-      if (
-        workspace === null ||
-        !hasStorageQuota(workspace.storageUsedBytes, subscription.storageLimitBytes, requestedBytes)
-      ) {
-        throw new UnprocessableEntityException("Workspace storage quota exceeded");
-      }
-      const availableBeforeReservation = subscription.storageLimitBytes - requestedBytes;
-      const reserved = await transaction.workspace.updateMany({
-        where: {
-          id: document.workspaceId,
-          deletedAt: null,
-          storageUsedBytes: { lte: availableBeforeReservation },
-        },
-        data: { storageUsedBytes: { increment: requestedBytes } },
-      });
-      if (reserved.count !== 1) {
-        throw new UnprocessableEntityException("Workspace storage quota exceeded");
-      }
+      await this.quota.reserveStorage(transaction, document.workspaceId, requestedBytes);
       return transaction.attachment.create({
         data: {
           id: attachmentId,
@@ -146,10 +120,20 @@ export class AttachmentsService {
       throw new UnprocessableEntityException("Uploaded object does not match its declaration");
     }
 
-    const finalized = await this.prisma.attachment.updateMany({
-      where: { id: attachment.id, status: AttachmentStatus.PENDING },
-      data: { status: AttachmentStatus.READY, finalizedAt: new Date(), uploadExpiresAt: null },
-    });
+    let finalized: { count: number };
+    try {
+      finalized = await this.prisma.$transaction(async (transaction) => {
+        await this.quota.assertStorageWithinLimit(transaction, attachment.workspaceId);
+        return transaction.attachment.updateMany({
+          where: { id: attachment.id, status: AttachmentStatus.PENDING },
+          data: { status: AttachmentStatus.READY, finalizedAt: new Date(), uploadExpiresAt: null },
+        });
+      });
+    } catch (error: unknown) {
+      if (!(error instanceof QuotaExceededError)) throw error;
+      await this.discardUpload(attachment);
+      throw error;
+    }
     if (finalized.count !== 1) {
       const current = await this.requireAttachment(attachment.id);
       if (current.status === AttachmentStatus.READY) return mapAttachment(current);
