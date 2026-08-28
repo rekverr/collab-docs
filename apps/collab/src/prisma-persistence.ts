@@ -35,107 +35,98 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
   }
 
   load(documentId: string): Promise<PersistedDocumentState> {
-    return this.prisma.$transaction(
-      async (transaction) => {
-        await lockDocument(transaction, documentId);
-        await requireActiveDocument(transaction, documentId);
-        const snapshot = await transaction.yjsSnapshot.findFirst({
-          where: { documentId },
-          orderBy: { sequence: "desc" },
-          select: { sequence: true, state: true },
-        });
-        const updates = await transaction.yjsUpdate.findMany({
-          where: { documentId, sequence: { gt: snapshot?.sequence ?? -1n } },
-          orderBy: { sequence: "asc" },
-          select: { sequence: true, update: true },
-        });
-        return {
-          sequence: updates.at(-1)?.sequence ?? snapshot?.sequence ?? 0n,
-          snapshot:
-            snapshot === null
-              ? null
-              : { sequence: snapshot.sequence, state: bytes(snapshot.state) },
-          updates: updates.map((update) => ({
-            sequence: update.sequence,
-            update: bytes(update.update),
-          })),
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    return this.prisma.$transaction(async (transaction) => {
+      await lockDocument(transaction, documentId);
+      await requireActiveDocument(transaction, documentId);
+      const snapshot = await transaction.yjsSnapshot.findFirst({
+        where: { documentId },
+        orderBy: { sequence: "desc" },
+        select: { sequence: true, state: true },
+      });
+      const updates = await transaction.yjsUpdate.findMany({
+        where: { documentId, sequence: { gt: snapshot?.sequence ?? -1n } },
+        orderBy: { sequence: "asc" },
+        select: { sequence: true, update: true },
+      });
+      return {
+        sequence: updates.at(-1)?.sequence ?? snapshot?.sequence ?? 0n,
+        snapshot:
+          snapshot === null ? null : { sequence: snapshot.sequence, state: bytes(snapshot.state) },
+        updates: updates.map((update) => ({
+          sequence: update.sequence,
+          update: bytes(update.update),
+        })),
+      };
+    }, documentTransactionOptions);
   }
 
   async storeUpdate(input: PersistUpdateInput): Promise<StoredUpdate> {
     const updateHash = hash(input.update);
     const projection = toPrismaJsonObject(input.projection);
-    const result = await this.prisma.$transaction(
-      async (transaction) => {
-        await lockDocument(transaction, input.documentId);
-        const document = await requireActiveDocument(transaction, input.documentId);
-        const existing = await transaction.yjsUpdate.findUnique({
-          where: { documentId_updateHash: { documentId: input.documentId, updateHash } },
-          select: { sequence: true },
-        });
-        if (existing !== null) {
-          if (
-            document.projectionSequence !== input.baseSequence &&
-            existing.sequence !== document.projectionSequence
-          ) {
-            throw new DocumentReloadRequiredError();
-          }
-          return {
-            sequence: document.projectionSequence,
-            duplicate: true,
-            published: document.publicationState === "PUBLISHED",
-          };
-        }
-        if (document.projectionSequence !== input.baseSequence) {
+    const result = await this.prisma.$transaction(async (transaction) => {
+      await lockDocument(transaction, input.documentId);
+      const document = await requireActiveDocument(transaction, input.documentId);
+      const existing = await transaction.yjsUpdate.findUnique({
+        where: { documentId_updateHash: { documentId: input.documentId, updateHash } },
+        select: { sequence: true },
+      });
+      if (existing !== null) {
+        if (
+          document.projectionSequence !== input.baseSequence &&
+          existing.sequence !== document.projectionSequence
+        ) {
           throw new DocumentReloadRequiredError();
         }
-        const maximum = await transaction.yjsUpdate.aggregate({
-          where: { documentId: input.documentId },
-          _max: { sequence: true },
-        });
-        const latestSnapshot = await transaction.yjsSnapshot.findFirst({
-          where: { documentId: input.documentId },
-          orderBy: { sequence: "desc" },
-          select: { sequence: true },
-        });
-        const sequence =
-          maxBigInt(maximum._max.sequence ?? 0n, latestSnapshot?.sequence ?? 0n) + 1n;
-        await transaction.yjsUpdate.create({
+        return {
+          sequence: document.projectionSequence,
+          duplicate: true,
+          published: document.publicationState === "PUBLISHED",
+        };
+      }
+      if (document.projectionSequence !== input.baseSequence) {
+        throw new DocumentReloadRequiredError();
+      }
+      const maximum = await transaction.yjsUpdate.aggregate({
+        where: { documentId: input.documentId },
+        _max: { sequence: true },
+      });
+      const latestSnapshot = await transaction.yjsSnapshot.findFirst({
+        where: { documentId: input.documentId },
+        orderBy: { sequence: "desc" },
+        select: { sequence: true },
+      });
+      const sequence = maxBigInt(maximum._max.sequence ?? 0n, latestSnapshot?.sequence ?? 0n) + 1n;
+      await transaction.yjsUpdate.create({
+        data: {
+          documentId: input.documentId,
+          actorUserId: input.actorUserId,
+          sequence,
+          updateHash,
+          update: Buffer.from(input.update),
+        },
+      });
+      await transaction.document.update({
+        where: { id: input.documentId },
+        data: {
+          contentProjection: projection,
+          projectionSequence: sequence,
+          projectionUpdatedAt: new Date(),
+        },
+      });
+      if (sequence % BigInt(this.versionEveryUpdates) === 0n) {
+        await transaction.documentVersion.create({
           data: {
             documentId: input.documentId,
-            actorUserId: input.actorUserId,
-            sequence,
-            updateHash,
-            update: Buffer.from(input.update),
-          },
-        });
-        await transaction.document.update({
-          where: { id: input.documentId },
-          data: {
+            authorId: input.actorUserId,
+            sourceSequence: sequence,
+            title: document.title,
+            yjsState: Buffer.from(Y.encodeStateAsUpdate(input.document)),
             contentProjection: projection,
-            projectionSequence: sequence,
-            projectionUpdatedAt: new Date(),
           },
         });
-        if (sequence % BigInt(this.versionEveryUpdates) === 0n) {
-          await transaction.documentVersion.create({
-            data: {
-              documentId: input.documentId,
-              authorId: input.actorUserId,
-              sourceSequence: sequence,
-              title: document.title,
-              yjsState: Buffer.from(Y.encodeStateAsUpdate(input.document)),
-              contentProjection: projection,
-            },
-          });
-        }
-        return { sequence, duplicate: false, published: document.publicationState === "PUBLISHED" };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+      }
+      return { sequence, duplicate: false, published: document.publicationState === "PUBLISHED" };
+    }, documentTransactionOptions);
 
     await this.publisher.publish({
       documentId: input.documentId,
@@ -170,82 +161,82 @@ export class PrismaCollaborationPersistence implements CollaborationPersistence 
   }
 
   private async performCompaction(documentId: string): Promise<CompactionResult> {
-    const durable = await this.prisma.$transaction(
-      async (transaction) => {
-        await lockDocument(transaction, documentId);
-        await requireActiveDocument(transaction, documentId);
-        const latest = await transaction.yjsSnapshot.findFirst({
-          where: { documentId },
-          orderBy: { sequence: "desc" },
-          select: { id: true, sequence: true, state: true },
-        });
-        const updates = await transaction.yjsUpdate.findMany({
-          where: { documentId, sequence: { gt: latest?.sequence ?? -1n } },
-          orderBy: { sequence: "asc" },
-          select: { sequence: true, update: true },
-        });
-        if (updates.length === 0)
-          return latest === null
-            ? null
-            : { id: latest.id, sequence: latest.sequence, created: false };
-        const document = new Y.Doc();
-        if (latest !== null) Y.applyUpdate(document, bytes(latest.state));
-        for (const update of updates) Y.applyUpdate(document, bytes(update.update));
-        const sequence = updates.at(-1)!.sequence;
-        const state = Y.encodeStateAsUpdate(document);
-        const snapshot = await transaction.yjsSnapshot.create({
-          data: {
-            documentId,
-            sequence,
-            state: Buffer.from(state),
-            stateVector: Buffer.from(Y.encodeStateVector(document)),
-            contentHash: hash(state),
-          },
-          select: { id: true, sequence: true },
-        });
-        document.destroy();
-        return { ...snapshot, created: true };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    const durable = await this.prisma.$transaction(async (transaction) => {
+      await lockDocument(transaction, documentId);
+      await requireActiveDocument(transaction, documentId);
+      const latest = await transaction.yjsSnapshot.findFirst({
+        where: { documentId },
+        orderBy: { sequence: "desc" },
+        select: { id: true, sequence: true, state: true },
+      });
+      const updates = await transaction.yjsUpdate.findMany({
+        where: { documentId, sequence: { gt: latest?.sequence ?? -1n } },
+        orderBy: { sequence: "asc" },
+        select: { sequence: true, update: true },
+      });
+      if (updates.length === 0)
+        return latest === null
+          ? null
+          : { id: latest.id, sequence: latest.sequence, created: false };
+      const document = new Y.Doc();
+      if (latest !== null) Y.applyUpdate(document, bytes(latest.state));
+      for (const update of updates) Y.applyUpdate(document, bytes(update.update));
+      const sequence = updates.at(-1)!.sequence;
+      const state = Y.encodeStateAsUpdate(document);
+      const snapshot = await transaction.yjsSnapshot.create({
+        data: {
+          documentId,
+          sequence,
+          state: Buffer.from(state),
+          stateVector: Buffer.from(Y.encodeStateVector(document)),
+          contentHash: hash(state),
+        },
+        select: { id: true, sequence: true },
+      });
+      document.destroy();
+      return { ...snapshot, created: true };
+    }, documentTransactionOptions);
 
     if (durable === null) return { compacted: false, sequence: 0n, removedUpdates: 0 };
     if (!durable.created)
       return { compacted: false, sequence: durable.sequence, removedUpdates: 0 };
 
-    const removedUpdates = await this.prisma.$transaction(
-      async (transaction) => {
-        await lockDocument(transaction, documentId);
-        const snapshot = await transaction.yjsSnapshot.findUnique({
-          where: { id: durable.id },
-          select: { id: true },
-        });
-        if (snapshot === null) throw new Error("Durable compaction snapshot disappeared");
-        await transaction.yjsUpdate.updateMany({
-          where: { documentId, sequence: { lte: durable.sequence } },
-          data: { compactedBySnapshotId: durable.id, compactedAt: new Date() },
-        });
-        const deleted = await transaction.yjsUpdate.deleteMany({
-          where: { documentId, compactedBySnapshotId: durable.id },
-        });
-        const retained = await transaction.yjsSnapshot.findMany({
-          where: { documentId },
-          orderBy: { sequence: "desc" },
-          take: this.retainedSnapshots,
-          select: { id: true },
-        });
-        await transaction.yjsSnapshot.deleteMany({
-          where: { documentId, id: { notIn: retained.map(({ id }) => id) } },
-        });
-        return deleted.count;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+    const removedUpdates = await this.prisma.$transaction(async (transaction) => {
+      await lockDocument(transaction, documentId);
+      const snapshot = await transaction.yjsSnapshot.findUnique({
+        where: { id: durable.id },
+        select: { id: true },
+      });
+      if (snapshot === null) throw new Error("Durable compaction snapshot disappeared");
+      await transaction.yjsUpdate.updateMany({
+        where: { documentId, sequence: { lte: durable.sequence } },
+        data: { compactedBySnapshotId: durable.id, compactedAt: new Date() },
+      });
+      const deleted = await transaction.yjsUpdate.deleteMany({
+        where: { documentId, compactedBySnapshotId: durable.id },
+      });
+      const retained = await transaction.yjsSnapshot.findMany({
+        where: { documentId },
+        orderBy: { sequence: "desc" },
+        take: this.retainedSnapshots,
+        select: { id: true },
+      });
+      await transaction.yjsSnapshot.deleteMany({
+        where: { documentId, id: { notIn: retained.map(({ id }) => id) } },
+      });
+      return deleted.count;
+    }, documentTransactionOptions);
     return { compacted: true, sequence: durable.sequence, removedUpdates };
   }
 }
 
 type Transaction = Prisma.TransactionClient;
+
+// The advisory lock serializes each document. READ COMMITTED ensures statements issued after
+// waiting for that lock observe the update/compaction that just committed instead of failing P2034.
+const documentTransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+} as const;
 
 async function lockDocument(transaction: Transaction, documentId: string): Promise<void> {
   await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${documentId}, 0))`;
