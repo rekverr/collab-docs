@@ -118,9 +118,11 @@ Authentication uses short-lived access JWTs and longer-lived rotating refresh JW
 
 Workspace roles are `OWNER`, `ADMIN`, `EDITOR`, and `VIEWER`. A centralized policy service resolves capabilities such as workspace management, membership management, billing, and document create/read/edit/delete/publish. Every REST resource and collaboration-room join performs authoritative server-side checks. Direct IDs do not bypass workspace or document access.
 
-Invitations contain a cryptographically random raw token delivered once; only its hash is stored. Owner invariants and membership changes are transactionally enforced. Viewer writes are rejected by both REST services and the WebSocket protocol.
+Workspace invitations are stored as email-bound, expiring pending records. After signing in with the invited email, the user can accept or decline them directly in the application. Acceptance atomically creates the workspace membership and consumes the invitation; duplicate pending invitations are rejected. A hashed-token acceptance endpoint remains available for future email delivery, but manual link copying is not the primary UI.
 
-The workspace dashboard includes member listing, invitations, role changes, and removal controls permitted by the current role. Since email delivery is intentionally omitted, the invitation URL is displayed once for manual delivery and opens the authenticated acceptance route.
+The workspace dashboard includes member listing, pending invitations, role changes, and removal controls permitted by the current role. Owner invariants and membership changes are transactionally enforced. Viewer writes are rejected by both REST services and the WebSocket protocol.
+
+Document metadata REST operations—including read/update, move, reorder, archive, restore, and delete—are authorized exclusively through the caller's current workspace role and capabilities. A personal `DocumentAccessGrant` or document share token grants document-scoped access only to the collaboration/content channel at its declared `VIEW` or `EDIT` level; it does not grant workspace membership, document-tree visibility, metadata mutation, publication, deletion, or access to unrelated workspace data. The API and collaboration service resolve these boundaries independently and authoritatively.
 
 ## Server and Client Components
 
