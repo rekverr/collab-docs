@@ -1,0 +1,21 @@
+# Frontend
+
+The web app uses Next.js App Router and strict TypeScript. React Server Components are the default for public documents, metadata, initial data, and read-heavy dashboard sections.
+
+Client Components are limited to interaction or browser-only behavior: the Yjs editor, WebSocket provider, presence, drag-and-drop, interactive navigation, and local form state. Client boundaries should remain small; live editing does not use Server Actions.
+
+Routing separates public auth routes (`/login`, `/register`), authenticated `/app/*` routes, public publication routes under `/p/*`, and tokenized document routes under `/share/*`. Middleware classifies only these obvious namespaces and checks for the presence of the refresh-session cookie to perform lightweight redirects. It does not validate tokens, query the database, resolve workspace membership, or make document authorization decisions; those remain API responsibilities.
+
+The browser calls the API through the same-origin `/api/backend/*` boundary. Auth operations pass through a narrow Next.js route handler which forwards the backend refresh cookie and mirrors the short-lived access JWT into a server-only HttpOnly cookie. The browser session still keeps its current access JWT in memory for interactive API calls; neither token is stored in local storage. This HttpOnly access cookie exists so authenticated Server Components and Server Actions can call the API without exposing credentials to client components. The private session boundary rotates the refresh session, verifies `/auth/me`, refreshes server-rendered data, and retries one failed interactive request after refresh. Failed or expired refresh sessions return the user to login.
+
+Workspace screens use Server Component route/layout files with narrow Client Components for session state, forms, loading/error feedback, sidebar interaction, and browser navigation. The session provider always preserves its server-rendered children; only interactive islands that require the in-memory access token use a `SessionGate`. This prevents authentication bootstrap from hiding streamed dashboard HTML. API responses pass through explicit runtime parsers and centralized error mapping rather than unchecked type assertions.
+
+The workspace overview is a streamed Server Component. Workspace metadata, recent documents, and member-role totals are fetched independently from the protected API and each has its own meaningful `Suspense` fallback and local error state. A slow members query therefore does not hold back document or workspace summary HTML. Private requests use `no-store`; backend permission checks remain authoritative.
+
+The member section has a narrow Client Component for invitation creation, role changes, removal, and one-time invitation URL copying. Invitation acceptance lives under the authenticated app namespace so middleware preserves the target through login. Public view share links stay server-rendered; an editable share link loads the Yjs editor only after an authenticated identity is available.
+
+Workspace renaming is an ordinary form mutation implemented as a Server Action with `useActionState` for pending and result feedback. The action validates its form input, calls the protected API, and revalidates the workspace route. Server Actions are intentionally not used for Yjs updates, editor keystrokes, presence, WebSocket setup, uploads, or drag-and-drop navigation; those remain explicit client/API or collaboration-service flows.
+
+Private workspace routes include an interactive document-navigation island. It loads the authoritative nested tree from the API, exposes mutation controls according to workspace capability, and keeps Viewers read-only. Native drag-and-drop supports placement before a sibling or nesting onto a document. Obvious self/descendant drops are blocked locally, while the backend remains authoritative for permissions, tenancy, and cycle validation. Rename, archive, delete, and move feedback is optimistic with rollback followed by an authoritative refetch.
+
+Feature screens explicitly represent loading, empty, and error states. The editor additionally represents connecting, connected, reconnecting, offline, deleted, and permission-revoked states.

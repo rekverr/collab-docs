@@ -1,0 +1,17 @@
+# CRDT Persistence
+
+Yjs is authoritative for concurrent document content. The dedicated collaboration service authenticates and authorizes a connection before joining a document room; awareness and presence remain ephemeral.
+
+Cold recovery loads the latest durable snapshot, applies persisted updates after its sequence boundary, and reconstructs the `Y.Doc`. Incoming updates are authorized, applied, and durably recorded with a stable idempotency key before downstream projection work is queued.
+
+The collaboration WebSocket protocol requires an initial JSON authentication message containing the access token and document ID before any room is joined. The service delegates token and document authorization to an internal API endpoint backed by the normal access guard and centralized policy service. After authorization it uses standard Yjs sync messages and awareness updates over binary WebSocket frames. Viewers may receive state and publish ephemeral awareness but server-side protocol checks reject non-empty Yjs updates; Editors, Admins, and Owners may write.
+
+One in-memory room owns one `Y.Doc` and awareness instance per active document. Concurrent room creation is deduplicated, all clients share that CRDT, awareness client IDs are removed on disconnect, and empty rooms are destroyed. Connections are periodically reauthorized, and the service exposes a document termination hook so deletion or revocation can close all affected sockets.
+
+`PrismaCollaborationPersistence` implements the durable boundary. Cold room creation takes a per-document PostgreSQL advisory lock, verifies the document remains active, loads the newest `YjsSnapshot`, then applies ordered `YjsUpdate` rows whose sequence is greater than the snapshot sequence. The room is exposed only after reconstruction completes.
+
+Incoming writes are serialized per room and reauthorized before application. The service applies the Yjs update to its authoritative `Y.Doc`, derives a normalized projection, then transactionally inserts the hashed update with a monotonic sequence and updates `Document.contentProjection` plus `projectionSequence`. `(documentId, updateHash)` makes duplicate delivery an idempotent success. A write is broadcast only after persistence and downstream queue publication succeed. On failure, clients are explicitly disconnected and must reconnect; the service never reports the update as saved.
+
+The projection is an allowlisted JSON structure containing paragraph, heading, list, task, image-reference, and code blocks plus derived plain text. It is produced from Yjs shared state, ignores unknown fields and arbitrary client HTML, and is suitable for SSR, search, metadata, and version previews. After commit, BullMQ receives idempotent search-index jobs and, for published documents, public-revalidation jobs.
+
+Compaction runs at a configurable update threshold and when an empty room closes. Local promise deduplication and the same PostgreSQL advisory lock prevent competing compactions. It reconstructs state from the latest snapshot plus following updates and commits the complete replacement snapshot first. A separate locked transaction then marks and deletes only updates through that durable sequence. Recent snapshots are retained; user-visible version history remains separate. Deleted or archived documents fail load/write checks and close affected sessions, so stale state cannot recreate them.
