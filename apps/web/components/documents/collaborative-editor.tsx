@@ -7,7 +7,7 @@ import { TaskList } from "@tiptap/extension-task-list";
 import { UniqueID } from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { attachmentApi, authApi } from "../../lib/api/client";
 import { uploadDirectly } from "../../lib/attachments/direct-upload";
@@ -29,6 +29,8 @@ import { ShareDialog } from "./share-dialog";
 interface CollaborativeEditorProps {
   documentId: string;
   role: WorkspaceRole;
+  shareToken?: string;
+  showDocumentTools?: boolean;
 }
 
 interface EditorRuntime {
@@ -37,14 +39,23 @@ interface EditorRuntime {
   user: CollaborationUser;
 }
 
-export function CollaborativeEditor({ documentId, role }: Readonly<CollaborativeEditorProps>) {
+export function CollaborativeEditor({
+  documentId,
+  role,
+  shareToken,
+  showDocumentTools = true,
+}: Readonly<CollaborativeEditorProps>) {
   const [generation, setGeneration] = useState(0);
+  const reloadSession = useCallback(() => setGeneration((value) => value + 1), []);
+
   return (
     <CollaborativeEditorSession
       key={`${documentId}-${generation}`}
       documentId={documentId}
       role={role}
-      onReloadRequired={() => setGeneration((value) => value + 1)}
+      shareToken={shareToken}
+      showDocumentTools={showDocumentTools}
+      onReloadRequired={reloadSession}
     />
   );
 }
@@ -52,12 +63,17 @@ export function CollaborativeEditor({ documentId, role }: Readonly<Collaborative
 function CollaborativeEditorSession({
   documentId,
   role,
+  shareToken,
+  showDocumentTools = true,
   onReloadRequired,
 }: Readonly<CollaborativeEditorProps & { onReloadRequired(): void }>) {
   const session = useSession();
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const onReloadRequiredRef = useRef(onReloadRequired);
+  onReloadRequiredRef.current = onReloadRequired;
   const readOnly = role === "VIEWER";
+  const documentToolsEnabled = showDocumentTools && shareToken === undefined;
   const [runtime] = useState<EditorRuntime>(() => {
     const document = new Y.Doc();
     const user: CollaborationUser = {
@@ -75,6 +91,7 @@ function CollaborativeEditorSession({
         readOnly,
         url: process.env.NEXT_PUBLIC_COLLAB_URL ?? "ws://localhost:3002",
         user,
+        ...(shareToken === undefined ? {} : { shareToken }),
         getAccessToken: () =>
           sessionRef.current.withAccessToken(async (accessToken) => {
             await authApi.me(accessToken);
@@ -92,7 +109,7 @@ function CollaborativeEditorSession({
   useEffect(() => {
     const unsubscribe = runtime.provider.subscribe((state) => {
       if (state === "reload-required") {
-        onReloadRequired();
+        onReloadRequiredRef.current();
         return;
       }
       setConnectionState(state);
@@ -104,7 +121,7 @@ function CollaborativeEditorSession({
       runtime.provider.destroy();
       runtime.document.destroy();
     };
-  }, [onReloadRequired, runtime]);
+  }, [runtime]);
 
   if (connectionState === "permission-revoked") {
     return (
@@ -132,7 +149,8 @@ function CollaborativeEditorSession({
         documentId={documentId}
         onRestored={onReloadRequired}
         onComments={() => setCommentTarget(null)}
-        canManageSharing={role === "OWNER" || role === "ADMIN"}
+        canManageSharing={documentToolsEnabled && (role === "OWNER" || role === "ADMIN")}
+        showDocumentTools={documentToolsEnabled}
       />
       {hasConnected ? (
         <EditorSurface
@@ -140,7 +158,8 @@ function CollaborativeEditorSession({
           runtime={runtime}
           readOnly={readOnly}
           connectionState={connectionState}
-          onCommentBlock={(blockId) => setCommentTarget(blockId)}
+          onCommentBlock={documentToolsEnabled ? (blockId) => setCommentTarget(blockId) : undefined}
+          allowAttachments={shareToken === undefined}
         />
       ) : (
         <div className="editor-loading loading-row">
@@ -148,7 +167,7 @@ function CollaborativeEditorSession({
           Connecting to the document…
         </div>
       )}
-      {commentTarget !== undefined && (
+      {documentToolsEnabled && commentTarget !== undefined && (
         <CommentPanel
           documentId={documentId}
           blockId={commentTarget}
@@ -166,12 +185,14 @@ function EditorSurface({
   readOnly,
   connectionState,
   onCommentBlock,
+  allowAttachments,
 }: Readonly<{
   documentId: string;
   runtime: EditorRuntime;
   readOnly: boolean;
   connectionState: CollaborationConnectionState;
-  onCommentBlock(blockId: string): void;
+  onCommentBlock?(blockId: string): void;
+  allowAttachments: boolean;
 }>) {
   const session = useSession();
   const uploadInput = useRef<HTMLInputElement>(null);
@@ -272,7 +293,7 @@ function EditorSurface({
       window.alert("Place the cursor inside a saved content block first.");
       return;
     }
-    onCommentBlock(blockId);
+    onCommentBlock?.(blockId);
   }
 
   return (
@@ -281,21 +302,23 @@ function EditorSurface({
         <EditorToolbar
           editor={editor}
           onAddImage={addImage}
-          onUploadImage={() => uploadInput.current?.click()}
+          onUploadImage={allowAttachments ? () => uploadInput.current?.click() : undefined}
           uploading={uploadProgress !== null}
-          onCommentBlock={commentOnSelectedBlock}
+          onCommentBlock={onCommentBlock === undefined ? undefined : commentOnSelectedBlock}
         />
       )}
-      <input
-        ref={uploadInput}
-        className="visually-hidden"
-        type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file !== undefined) void uploadImage(file);
-        }}
-      />
+      {allowAttachments && (
+        <input
+          ref={uploadInput}
+          className="visually-hidden"
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file !== undefined) void uploadImage(file);
+          }}
+        />
+      )}
       {uploadProgress !== null && (
         <div className="attachment-upload-state" role="status">
           Uploading image… {uploadProgress}%
@@ -307,7 +330,7 @@ function EditorSurface({
           {uploadError}
         </p>
       )}
-      {readOnly && (
+      {readOnly && onCommentBlock !== undefined && (
         <div className="editor-readonly-note">
           <span>You can read this document, but your role cannot edit it.</span>
           <button className="text-button" type="button" onClick={commentOnSelectedBlock}>
@@ -329,9 +352,9 @@ function EditorToolbar({
 }: Readonly<{
   editor: Editor | null;
   onAddImage(): void;
-  onUploadImage(): void;
+  onUploadImage?: () => void;
   uploading: boolean;
-  onCommentBlock(): void;
+  onCommentBlock?: () => void;
 }>) {
   const unavailable = editor === null;
   return (
@@ -385,15 +408,19 @@ function EditorToolbar({
       >
         Code
       </button>
-      <button disabled={unavailable || uploading} type="button" onClick={onUploadImage}>
-        {uploading ? "Uploading…" : "Upload image"}
-      </button>
+      {onUploadImage !== undefined && (
+        <button disabled={unavailable || uploading} type="button" onClick={onUploadImage}>
+          {uploading ? "Uploading…" : "Upload image"}
+        </button>
+      )}
       <button disabled={unavailable} type="button" onClick={onAddImage}>
         Image URL
       </button>
-      <button disabled={unavailable} type="button" onClick={onCommentBlock}>
-        Comment block
-      </button>
+      {onCommentBlock !== undefined && (
+        <button disabled={unavailable} type="button" onClick={onCommentBlock}>
+          Comment block
+        </button>
+      )}
     </div>
   );
 }
@@ -406,6 +433,7 @@ function EditorHeader({
   onRestored,
   onComments,
   canManageSharing,
+  showDocumentTools,
 }: Readonly<{
   connectionState: CollaborationConnectionState;
   provider: CollabWebSocketProvider;
@@ -414,6 +442,7 @@ function EditorHeader({
   onRestored(): void;
   onComments(): void;
   canManageSharing: boolean;
+  showDocumentTools: boolean;
 }>) {
   const [collaborators, setCollaborators] = useState<CollaborationUser[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -451,16 +480,20 @@ function EditorHeader({
             Share
           </button>
         )}
-        <button className="text-button history-trigger" type="button" onClick={onComments}>
-          Comments
-        </button>
-        <button
-          className="text-button history-trigger"
-          type="button"
-          onClick={() => setHistoryOpen(true)}
-        >
-          History
-        </button>
+        {showDocumentTools && (
+          <>
+            <button className="text-button history-trigger" type="button" onClick={onComments}>
+              Comments
+            </button>
+            <button
+              className="text-button history-trigger"
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+            >
+              History
+            </button>
+          </>
+        )}
         <div
           className="collaborator-list"
           aria-label={`${collaborators.length} collaborators present`}
@@ -477,7 +510,7 @@ function EditorHeader({
           ))}
         </div>
       </div>
-      {historyOpen && (
+      {showDocumentTools && historyOpen && (
         <VersionHistory
           documentId={documentId}
           canRestore={!readOnly}

@@ -5,7 +5,11 @@ import { createProjectionRevalidationJob, type ProjectionEvent } from "./downstr
 test("published projection changes enqueue public revalidation work", () => {
   const job = createProjectionRevalidationJob(event(true));
 
-  assert.deepEqual(job?.data, { documentId: "document-1", sequence: "42" });
+  assert.deepEqual(job?.data, {
+    documentId: "document-1",
+    sequence: "42",
+    reason: "projection-changed",
+  });
   assert.equal(job?.options.jobId, "document-1-42");
   assert.equal(job?.options.attempts, 5);
 });

@@ -61,6 +61,56 @@ export interface WorkspaceMember {
   updatedAt: string;
 }
 
+export type WorkspaceInvitationStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+export interface WorkspaceInvitation {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: WorkspaceRole;
+  status: WorkspaceInvitationStatus;
+  expiresAt: string;
+  createdAt: string;
+  token: string;
+}
+
+export interface PendingWorkspaceInvitation {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: WorkspaceRole;
+  status: "PENDING";
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface CurrentUserWorkspaceInvitation {
+  id: string;
+  workspaceId: string;
+  role: WorkspaceRole;
+  status: "PENDING";
+  expiresAt: string;
+  createdAt: string;
+  workspace: { name: string };
+  invitedBy: { email: string; displayName: string | null } | null;
+}
+
+export interface WorkspaceMembershipUpdate {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceRole;
+  updatedAt: string;
+}
+
+export interface AcceptedWorkspaceMembership {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceRole;
+  createdAt: string;
+}
+
 export type DocumentPublicationState = "PRIVATE" | "PUBLISHED";
 export type DocumentAccessMode = "VIEW" | "EDIT";
 
@@ -222,6 +272,14 @@ export interface DocumentSharingState {
   publicSlug: string | null;
   publicUrl: string | null;
   links: DocumentShareLink[];
+}
+
+export interface SharedDocument {
+  documentId: string;
+  title: string;
+  accessMode: DocumentAccessMode;
+  expiresAt: string | null;
+  contentProjection: DocumentProjection;
 }
 
 export interface ApiErrorBody {

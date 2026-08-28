@@ -94,6 +94,7 @@ function fixture(): AuthService {
     S3_BUCKET: "test-bucket",
     S3_REGION: "test-region",
     WEB_URL: "http://localhost:3000",
+    INTERNAL_WEB_URL: "http://localhost:3000",
     API_URL: "http://localhost:3001",
     INTERNAL_API_URL: "http://localhost:3001",
     COLLAB_URL: "ws://localhost:3002",

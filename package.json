@@ -4,18 +4,19 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "engines": {
-    "node": ">=20.6.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "node --env-file=.env scripts/run-dev.mjs",
     "db:migrate": "node --env-file=.env scripts/run-migrations.mjs",
+    "db:studio": "node --env-file=.env scripts/run-prisma-studio.mjs",
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "test:e2e": "node scripts/run-e2e.mjs"
+    "test:e2e": "node --env-file-if-exists=.env scripts/run-e2e.mjs"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

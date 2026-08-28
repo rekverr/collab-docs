@@ -234,7 +234,7 @@ export class VersionsService {
       if (published) {
         await this.revalidationQueue.add(
           "revalidate-document",
-          { documentId, sequence: sequenceText },
+          { documentId, sequence: sequenceText, reason: "projection-changed" },
           options,
         );
       }

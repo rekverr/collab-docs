@@ -8,5 +8,5 @@ export type PublicRevalidationReason =
 export interface PublicRevalidationJobData {
   documentId: string;
   sequence: string;
-  reason?: PublicRevalidationReason;
+  reason: PublicRevalidationReason;
 }

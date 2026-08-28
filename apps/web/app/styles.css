@@ -20,6 +20,11 @@ input,
 textarea {
   font: inherit;
 }
+input::placeholder,
+textarea::placeholder {
+  color: #9a9389;
+  opacity: 1;
+}
 .brand {
   color: #24211d;
   font-weight: 800;
@@ -642,6 +647,86 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+.member-management {
+  border-top: 1px solid #ebe7df;
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+}
+.member-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.member-list li,
+.member-actions,
+.member-invite-form > div {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+.member-list li {
+  justify-content: space-between;
+}
+.member-list li > div:first-child {
+  display: grid;
+  min-width: 0;
+}
+.member-list li strong {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-list li span {
+  color: #81796e;
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-actions select,
+.member-invite-form input,
+.member-invite-form select,
+.invitation-result input {
+  background: #fff;
+  border: 1px solid #d8d3ca;
+  border-radius: 0.45rem;
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+}
+.member-invite-form {
+  display: grid;
+  gap: 0.5rem;
+}
+.member-invite-form input {
+  flex: 1;
+}
+.member-invite-form .button {
+  min-height: auto;
+  padding: 0.55rem 0.7rem;
+}
+.danger-text {
+  color: #9a3d34;
+}
+.invitation-result {
+  background: #f4f7f4;
+  border: 1px solid #d7e5db;
+  border-radius: 0.55rem;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+}
+.invitation-result p {
+  margin: 0;
+}
+.invitation-page {
+  text-align: center;
+}
+.invitation-page .button {
+  text-decoration: none;
 }
 .dashboard-settings-form {
   border-top: 1px solid #ebe7df;
@@ -1298,6 +1383,44 @@ textarea {
   background: #fbfaf7;
   min-height: 100vh;
   padding: clamp(2rem, 6vw, 5rem) 1.25rem 20vh;
+}
+.shared-document-page {
+  background: #fbfaf7;
+  min-height: 100vh;
+}
+.shared-document-header {
+  align-items: center;
+  border-bottom: 1px solid #e7e3db;
+  display: flex;
+  gap: 2rem;
+  padding: 1rem 1.5rem;
+}
+.shared-document-header h1 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+.shared-document-header .eyebrow {
+  margin-bottom: 0.2rem;
+}
+.share-sign-in-callout {
+  align-items: center;
+  background: #f1f6f2;
+  border: 1px solid #d7e5db;
+  border-radius: 0.7rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  padding: 1rem;
+}
+.share-sign-in-callout p {
+  color: #365c45;
+  margin: 0;
+}
+.share-sign-in-callout .button {
+  flex: none;
+  min-height: auto;
+  text-decoration: none;
 }
 .public-document {
   margin: 0 auto;

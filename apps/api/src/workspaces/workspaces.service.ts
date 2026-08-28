@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { InvitationStatus, Plan, SubscriptionStatus, WorkspaceRole } from "@prisma/client";
+import { InvitationStatus, Plan, Prisma, SubscriptionStatus, WorkspaceRole } from "@prisma/client";
 import { PrismaService } from "../infrastructure/prisma/prisma.service";
 import { PolicyService } from "../permissions/policy.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -147,6 +147,7 @@ export class WorkspacesService {
         transaction,
       );
       this.policy.assertCanAssignRole(access.role, input.role);
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${workspaceId}:${email}`}, 0))`;
       const existingUser = await transaction.user.findUnique({
         where: { email },
         select: { id: true },
@@ -162,7 +163,6 @@ export class WorkspacesService {
           workspaceId,
           email,
           status: InvitationStatus.PENDING,
-          expiresAt: { gt: new Date() },
         },
         select: { id: true },
       });
@@ -187,14 +187,86 @@ export class WorkspacesService {
 
   accept(user: AuthenticatedUser, rawToken: string) {
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    return this.acceptInvitation(user, { tokenHash });
+  }
+
+  acceptById(user: AuthenticatedUser, invitationId: string) {
+    return this.acceptInvitation(user, { id: invitationId });
+  }
+
+  async listPendingForUser(user: AuthenticatedUser) {
+    return this.prisma.workspaceInvitation.findMany({
+      where: {
+        email: user.email.trim().toLowerCase(),
+        status: InvitationStatus.PENDING,
+        expiresAt: { gt: new Date() },
+        workspace: { deletedAt: null },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        workspaceId: true,
+        role: true,
+        status: true,
+        expiresAt: true,
+        createdAt: true,
+        workspace: { select: { name: true } },
+        invitedBy: { select: { email: true, displayName: true } },
+      },
+    });
+  }
+
+  async listPendingForWorkspace(userId: string, workspaceId: string) {
+    await this.policy.requireWorkspaceCapability(userId, workspaceId, "member.invite");
+    return this.prisma.workspaceInvitation.findMany({
+      where: { workspaceId, status: InvitationStatus.PENDING, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        workspaceId: true,
+        email: true,
+        role: true,
+        status: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  decline(user: AuthenticatedUser, invitationId: string): Promise<void> {
     const now = new Date();
     return this.prisma.$transaction(async (transaction) => {
-      const invitation = await transaction.workspaceInvitation.findUnique({ where: { tokenHash } });
-      if (invitation === null || invitation.status !== InvitationStatus.PENDING)
-        throw new NotFoundException("Invitation not found");
+      const invitation = await transaction.workspaceInvitation.findUnique({
+        where: { id: invitationId },
+      });
+      if (invitation === null) throw new NotFoundException("Invitation not found");
+      if (invitation.status !== InvitationStatus.PENDING)
+        throw new ConflictException("Invitation has already been used");
       if (invitation.expiresAt <= now)
         throw new UnprocessableEntityException("Invitation has expired");
-      if (invitation.email !== user.email.toLowerCase())
+      if (invitation.email !== user.email.trim().toLowerCase())
+        throw new ForbiddenException("Invitation belongs to another account");
+      const declined = await transaction.workspaceInvitation.updateMany({
+        where: { id: invitation.id, status: InvitationStatus.PENDING, expiresAt: { gt: now } },
+        data: { status: InvitationStatus.REVOKED, revokedAt: now },
+      });
+      if (declined.count !== 1) throw new ConflictException("Invitation has already been used");
+    });
+  }
+
+  private acceptInvitation(
+    user: AuthenticatedUser,
+    where: Prisma.WorkspaceInvitationWhereUniqueInput,
+  ) {
+    const now = new Date();
+    return this.prisma.$transaction(async (transaction) => {
+      const invitation = await transaction.workspaceInvitation.findUnique({ where });
+      if (invitation === null) throw new NotFoundException("Invitation not found");
+      if (invitation.status !== InvitationStatus.PENDING)
+        throw new ConflictException("Invitation has already been used");
+      if (invitation.expiresAt <= now)
+        throw new UnprocessableEntityException("Invitation has expired");
+      if (invitation.email !== user.email.trim().toLowerCase())
         throw new ForbiddenException("Invitation belongs to another account");
       const existing = await transaction.workspaceMember.findUnique({
         where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: user.id } },

@@ -1,5 +1,8 @@
-import { NextResponse } from "next/server";
-import { accessCookieName } from "../../../../../lib/auth/session-cookies";
+import {
+  accessCookieHeader,
+  readAccessToken,
+  shouldUseSecureCookies,
+} from "../../../../../lib/auth/session-cookies";
 
 const operations = new Set(["login", "logout", "me", "refresh", "register"]);
 
@@ -32,35 +35,27 @@ async function proxyAuthRequest(request: Request, operation: string): Promise<Re
       body,
       cache: "no-store",
     });
-    const responseBody = upstream.status === 204 ? null : await upstream.arrayBuffer();
-    const response = new NextResponse(responseBody, {
-      status: upstream.status,
-      headers: responseHeaders(upstream.headers),
-    });
+    const responseBody = upstream.status === 204 ? null : await upstream.text();
+    const accessToken =
+      upstream.ok && operation !== "logout" && responseBody !== null
+        ? readAccessToken(responseBody)
+        : null;
+    const outgoingHeaders = responseHeaders(upstream.headers);
+    if (accessToken !== null) {
+      outgoingHeaders.append(
+        "set-cookie",
+        accessCookieHeader(accessToken, shouldUseSecureCookies(request)),
+      );
+    }
     const refreshCookie = upstream.headers.get("set-cookie");
-    if (refreshCookie !== null) response.headers.append("set-cookie", refreshCookie);
-
-    if (upstream.ok && operation !== "logout" && responseBody !== null) {
-      const accessToken = readAccessToken(responseBody);
-      if (accessToken !== null) {
-        response.cookies.set(accessCookieName, accessToken, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-          path: "/",
-        });
-      }
-    }
+    if (refreshCookie !== null) outgoingHeaders.append("set-cookie", refreshCookie);
     if (operation === "logout") {
-      response.cookies.set(accessCookieName, "", {
-        expires: new Date(0),
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-      });
+      outgoingHeaders.append(
+        "set-cookie",
+        accessCookieHeader("", shouldUseSecureCookies(request), true),
+      );
     }
-    return response;
+    return new Response(responseBody, { status: upstream.status, headers: outgoingHeaders });
   } catch {
     return Response.json({ message: "Authentication service is unavailable" }, { status: 502 });
   }
@@ -82,15 +77,4 @@ function responseHeaders(source: Headers): Headers {
     if (value !== null) headers.set(name, value);
   }
   return headers;
-}
-
-function readAccessToken(body: ArrayBuffer): string | null {
-  try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(body));
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    const accessToken: unknown = Reflect.get(value, "accessToken");
-    return typeof accessToken === "string" && accessToken.length > 0 ? accessToken : null;
-  } catch {
-    return null;
-  }
 }

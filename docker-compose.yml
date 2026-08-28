@@ -14,7 +14,8 @@ x-api-environment: &api-environment
   S3_SECRET_KEY: ${S3_SECRET_KEY:-local-development-minio-secret}
   S3_BUCKET: ${S3_BUCKET:-collab-docs}
   S3_REGION: ${S3_REGION:-us-east-1}
-  WEB_URL: http://web:3000
+  WEB_URL: ${WEB_URL:-http://localhost:3000}
+  INTERNAL_WEB_URL: http://web:3000
   API_URL: http://api:3001
   INTERNAL_API_URL: http://api:3001
   COLLAB_URL: ws://collab:3002

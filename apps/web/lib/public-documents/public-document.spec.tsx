@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
-import { parsePublicDocument } from "./public-document";
+import { parsePublicDocument, parseSharedPublicDocument } from "./public-document";
 import { PublicDocumentBody } from "./public-document-renderer";
 
 function publicDocument(blocks: unknown[], plainText = "Safe text"): unknown {
@@ -111,6 +111,59 @@ describe("safe public document rendering", () => {
             { id: "paragraph-1", type: "paragraph", text: "Click", href: "javascript:alert(1)" },
           ]),
         ),
+      TypeError,
+    );
+  });
+
+  it("safely parses shared projections and scopes attachment URLs to the share token", () => {
+    const shared = parseSharedPublicDocument({
+      documentId: "11111111-1111-4111-8111-111111111111",
+      title: "Shared document",
+      accessMode: "VIEW",
+      expiresAt: null,
+      contentProjection: {
+        version: 1,
+        blocks: [
+          {
+            id: "image-1",
+            type: "image",
+            source: {
+              kind: "attachment",
+              attachmentId: "22222222-2222-4222-8222-222222222222",
+            },
+            alt: "Diagram",
+          },
+        ],
+        plainText: "",
+      },
+    });
+    const html = renderToStaticMarkup(
+      <PublicDocumentBody
+        blocks={shared.contentProjection.blocks}
+        attachmentBasePath="/api/backend/shares/safe-token/attachments"
+      />,
+    );
+    assert.match(
+      html,
+      /\/api\/backend\/shares\/safe-token\/attachments\/22222222-2222-4222-8222-222222222222/,
+    );
+    assert.throws(
+      () =>
+        parseSharedPublicDocument({
+          ...shared,
+          contentProjection: {
+            version: 1,
+            blocks: [
+              {
+                id: "image-1",
+                type: "image",
+                source: { kind: "url", url: "javascript:alert(1)" },
+                alt: "Unsafe",
+              },
+            ],
+            plainText: "",
+          },
+        }),
       TypeError,
     );
   });

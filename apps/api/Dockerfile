@@ -11,6 +11,8 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/database/prisma packages/database/prisma
 RUN pnpm install --frozen-lockfile
+RUN DATABASE_URL=postgresql://build:build@postgres:5432/collab_docs_build \
+  pnpm --filter @collab-docs/database exec prisma generate --schema prisma/schema.prisma
 
 COPY apps/api apps/api
 RUN pnpm --filter @collab-docs/api build

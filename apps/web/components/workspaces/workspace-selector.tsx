@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "../auth/session-provider";
 import { workspaceApi } from "../../lib/api/client";
 import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceSummary } from "../../lib/api/types";
+import { PendingInvitations } from "./pending-invitations";
 
 function slugify(value: string): string {
   return value
@@ -27,20 +28,18 @@ export function WorkspaceSelector() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    void session
-      .withAccessToken(workspaceApi.list)
-      .then((items) => {
-        if (active) setWorkspaces(items);
-      })
-      .catch((reason: unknown) => {
-        if (active) setLoadError(apiErrorMessage(reason));
-      });
-    return () => {
-      active = false;
-    };
+  const loadWorkspaces = useCallback(async (): Promise<void> => {
+    setLoadError(null);
+    try {
+      setWorkspaces(await session.withAccessToken(workspaceApi.list));
+    } catch (reason: unknown) {
+      setLoadError(apiErrorMessage(reason));
+    }
   }, [session]);
+
+  useEffect(() => {
+    void loadWorkspaces();
+  }, [loadWorkspaces]);
 
   async function createWorkspace(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -97,6 +96,7 @@ export function WorkspaceSelector() {
           ))}
         </div>
       </section>
+      <PendingInvitations onAccepted={loadWorkspaces} />
       <section className="create-card">
         <h2>Create a workspace</h2>
         <form className="form-stack" onSubmit={createWorkspace}>

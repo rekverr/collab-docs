@@ -28,7 +28,7 @@ export class PublicRevalidationProcessor extends WorkerHost {
     private readonly metrics: MetricsService,
   ) {
     super();
-    this.endpoint = `${config.getOrThrow("WEB_URL", { infer: true }).replace(/\/$/, "")}/api/internal/revalidate`;
+    this.endpoint = `${config.getOrThrow("INTERNAL_WEB_URL", { infer: true }).replace(/\/$/, "")}/api/internal/revalidate`;
     this.secret = config.getOrThrow("REVALIDATION_SECRET", { infer: true });
   }
 
@@ -96,10 +96,17 @@ function isValidJob(data: unknown): data is PublicRevalidationJobData {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return false;
   const documentId: unknown = Reflect.get(data, "documentId");
   const sequence: unknown = Reflect.get(data, "sequence");
+  const reason: unknown = Reflect.get(data, "reason");
   return (
     typeof documentId === "string" &&
     documentId.length > 0 &&
     typeof sequence === "string" &&
-    sequence.length > 0
+    sequence.length > 0 &&
+    (reason === "projection-changed" ||
+      reason === "published" ||
+      reason === "unpublished" ||
+      reason === "archived" ||
+      reason === "deleted" ||
+      reason === "restored")
   );
 }

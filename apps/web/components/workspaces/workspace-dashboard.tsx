@@ -7,6 +7,7 @@ import { SessionGate } from "../auth/session-provider";
 import { BillingSettings } from "../billing/billing-settings";
 import { DocumentNavigation } from "../documents/document-navigation";
 import { WorkspaceSettingsForm } from "./workspace-settings-form";
+import { WorkspaceMembers } from "./workspace-members";
 
 export function WorkspaceDashboard({ workspaceId }: Readonly<{ workspaceId: string }>) {
   return (
@@ -119,13 +120,19 @@ async function RecentDocumentsSection({ workspaceId }: Readonly<{ workspaceId: s
 
 async function MemberSummarySection({ workspaceId }: Readonly<{ workspaceId: string }>) {
   try {
-    const members = await serverWorkspaceApi.members(workspaceId);
+    const [workspace, members] = await Promise.all([
+      serverWorkspaceApi.get(workspaceId),
+      serverWorkspaceApi.members(workspaceId),
+    ]);
     return (
       <DashboardCard title="Member summary">
         <strong className="dashboard-primary">
           {members.length} {members.length === 1 ? "member" : "members"}
         </strong>
         <div className="dashboard-role-counts">{roleSummary(members)}</div>
+        <SessionGate>
+          <WorkspaceMembers workspace={workspace} />
+        </SessionGate>
       </DashboardCard>
     );
   } catch (error: unknown) {

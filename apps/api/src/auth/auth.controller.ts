@@ -23,7 +23,6 @@ import {
 } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import type { AppEnvironment } from "../common/config/environment";
-import { RuntimeEnvironment } from "../common/config/environment";
 import { AccessTokenGuard } from "./access-token.guard";
 import { AuthService } from "./auth.service";
 import type { AuthResult, AuthenticatedUser, ClientMetadata } from "./auth.types";
@@ -50,7 +49,7 @@ export class AuthController {
     config: ConfigService<AppEnvironment, true>,
   ) {
     this.secureCookies =
-      config.getOrThrow("NODE_ENV", { infer: true }) === RuntimeEnvironment.Production;
+      new URL(config.getOrThrow("WEB_URL", { infer: true })).protocol === "https:";
   }
 
   @Post("register")

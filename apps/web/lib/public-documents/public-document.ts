@@ -8,6 +8,14 @@ export interface PublicDocument {
   projectionUpdatedAt: string | null;
 }
 
+export interface SharedPublicDocument {
+  documentId: string;
+  title: string;
+  accessMode: "VIEW" | "EDIT";
+  expiresAt: string | null;
+  contentProjection: DocumentProjection;
+}
+
 export function parsePublicDocument(value: unknown): PublicDocument {
   const data = strictRecord(
     value,
@@ -26,6 +34,26 @@ export function parsePublicDocument(value: unknown): PublicDocument {
       projectionUpdatedAt === null
         ? null
         : limitedString(projectionUpdatedAt, 64, "projection timestamp"),
+  };
+}
+
+export function parseSharedPublicDocument(value: unknown): SharedPublicDocument {
+  const data = strictRecord(
+    value,
+    ["documentId", "title", "accessMode", "expiresAt", "contentProjection"],
+    "shared document",
+  );
+  const accessMode = field(data, "accessMode");
+  const expiresAt = field(data, "expiresAt");
+  if (accessMode !== "VIEW" && accessMode !== "EDIT") {
+    throw new TypeError("Invalid shared document access mode");
+  }
+  return {
+    documentId: uuid(field(data, "documentId"), "document ID"),
+    title: limitedString(field(data, "title"), 500, "document title"),
+    accessMode,
+    expiresAt: expiresAt === null ? null : limitedString(expiresAt, 64, "share-link expiration"),
+    contentProjection: parseProjection(field(data, "contentProjection")),
   };
 }
 

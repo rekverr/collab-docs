@@ -6,6 +6,7 @@ import * as Y from "yjs";
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+const SYNC_STEP_2 = 1;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 
 export type CollaborationConnectionState =
@@ -35,6 +36,7 @@ interface CollaborationProviderOptions {
 }
 
 type StateListener = (state: CollaborationConnectionState) => void;
+type SyncedListener = (isSynced: boolean) => void;
 
 export class CollabWebSocketProvider {
   readonly awareness: awarenessProtocol.Awareness;
@@ -42,6 +44,8 @@ export class CollabWebSocketProvider {
   private socket: WebSocket | null = null;
   private state: CollaborationConnectionState = "connecting";
   private readonly stateListeners = new Set<StateListener>();
+  private readonly syncedListeners = new Set<SyncedListener>();
+  private socketSynced = false;
   private reconnectAttempt = 0;
   private serverStateRequested = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +68,7 @@ export class CollabWebSocketProvider {
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     this.serverStateRequested = false;
+    this.socketSynced = false;
 
     socket.addEventListener("open", () => {
       void this.authenticate(socket);
@@ -85,6 +90,16 @@ export class CollabWebSocketProvider {
     return () => this.stateListeners.delete(listener);
   }
 
+  /** TipTap's UniqueID extension uses the provider's synced event as its safe
+   * point for assigning block IDs after the initial remote state is loaded. */
+  on(event: "synced", listener: SyncedListener): void {
+    if (event === "synced") this.syncedListeners.add(listener);
+  }
+
+  off(event: "synced", listener: SyncedListener): void {
+    if (event === "synced") this.syncedListeners.delete(listener);
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -98,6 +113,7 @@ export class CollabWebSocketProvider {
     this.socket = null;
     this.awareness.destroy();
     this.stateListeners.clear();
+    this.syncedListeners.clear();
   }
 
   private async authenticate(socket: WebSocket): Promise<void> {
@@ -129,6 +145,10 @@ export class CollabWebSocketProvider {
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, MESSAGE_SYNC);
         syncProtocol.readSyncMessage(decoder, encoder, this.options.document, this);
+        if (syncType === SYNC_STEP_2 && !this.socketSynced) {
+          this.socketSynced = true;
+          for (const listener of this.syncedListeners) listener(true);
+        }
         if (
           encoding.length(encoder) > 1 &&
           socket.readyState === WebSocket.OPEN &&

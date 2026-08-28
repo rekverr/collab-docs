@@ -59,7 +59,7 @@ export class JsonLogger implements LoggerService {
 
   private message(value: unknown): string {
     if (typeof value === "string") return value;
-    if (value instanceof Error) return value.name;
+    if (value instanceof Error) return value.message || value.name;
     return "Non-string log message";
   }
 

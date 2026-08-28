@@ -22,11 +22,16 @@ export function AuthForm({ mode }: Readonly<{ mode: "login" | "register" }>) {
     const password = String(data.get("password") ?? "");
     const displayName = String(data.get("displayName") ?? "").trim();
     try {
-      if (isRegister)
-        await authApi.register({ email, password, ...(displayName === "" ? {} : { displayName }) });
-      else await authApi.login({ email, password });
+      const result = isRegister
+        ? await authApi.register({
+            email,
+            password,
+            ...(displayName === "" ? {} : { displayName }),
+          })
+        : await authApi.login({ email, password });
+      await authApi.persistAccessSession(result.accessToken);
       const nextPath = searchParams.get("next");
-      router.replace(nextPath?.startsWith("/app") ? nextPath : "/app");
+      router.replace(safeNextPath(nextPath));
       router.refresh();
     } catch (reason: unknown) {
       setError(apiErrorMessage(reason));
@@ -96,4 +101,9 @@ export function AuthForm({ mode }: Readonly<{ mode: "login" | "register" }>) {
       </section>
     </main>
   );
+}
+
+function safeNextPath(value: string | null): string {
+  if (value === null || !value.startsWith("/") || value.startsWith("//")) return "/app";
+  return value.startsWith("/app") || value.startsWith("/share/") ? value : "/app";
 }

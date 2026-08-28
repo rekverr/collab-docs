@@ -4,15 +4,25 @@ import type { DocumentProjectionBlock } from "../api/types";
 export function PublicDocumentBody({
   blocks,
   publicSlug,
-}: Readonly<{ blocks: readonly DocumentProjectionBlock[]; publicSlug: string }>) {
+  attachmentBasePath,
+}: Readonly<{
+  blocks: readonly DocumentProjectionBlock[];
+  publicSlug?: string;
+  attachmentBasePath?: string;
+}>) {
+  const attachmentPath =
+    attachmentBasePath ??
+    (publicSlug === undefined
+      ? undefined
+      : `/api/backend/public-documents/${encodeURIComponent(publicSlug)}/attachments`);
   return (
     <div className="public-document-blocks">
-      {blocks.map((block) => renderBlock(block, publicSlug))}
+      {blocks.map((block) => renderBlock(block, attachmentPath))}
     </div>
   );
 }
 
-function renderBlock(block: DocumentProjectionBlock, publicSlug: string): ReactNode {
+function renderBlock(block: DocumentProjectionBlock, attachmentBasePath?: string): ReactNode {
   if (block.type === "paragraph") return <p key={block.id}>{block.text}</p>;
   if (block.type === "heading") {
     if (block.level === 1) return <h2 key={block.id}>{block.text}</h2>;
@@ -50,7 +60,8 @@ function renderBlock(block: DocumentProjectionBlock, publicSlug: string): ReactN
       </figure>
     );
   }
-  const source = `/api/backend/public-documents/${encodeURIComponent(publicSlug)}/attachments/${encodeURIComponent(block.source.attachmentId)}`;
+  if (attachmentBasePath === undefined) return null;
+  const source = `${attachmentBasePath}/${encodeURIComponent(block.source.attachmentId)}`;
   return (
     <figure key={block.id}>
       <img src={source} alt={block.alt} loading="lazy" />

@@ -28,8 +28,10 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   AcceptWorkspaceInvitationDto,
   AcceptedWorkspaceMembershipDto,
+  CurrentUserWorkspaceInvitationDto,
   CreateWorkspaceDto,
   InviteWorkspaceMemberDto,
+  PendingWorkspaceInvitationDto,
   UpdateWorkspaceDto,
   UpdateWorkspaceMemberRoleDto,
   UpdatedWorkspaceMembershipDto,
@@ -110,6 +112,44 @@ export class WorkspacesController {
   @ApiCreatedResponse({ type: AcceptedWorkspaceMembershipDto })
   accept(@CurrentUser() user: AuthenticatedUser, @Body() input: AcceptWorkspaceInvitationDto) {
     return this.workspaces.accept(user, input.token);
+  }
+
+  @Get("workspace-invitations/pending")
+  @ApiOperation({ summary: "List pending workspace invitations for the current email" })
+  @ApiOkResponse({ type: [CurrentUserWorkspaceInvitationDto] })
+  listMyInvitations(@CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.listPendingForUser(user);
+  }
+
+  @Get("workspaces/:workspaceId/invitations")
+  @ApiOperation({ summary: "List pending invitations for workspace administrators" })
+  @ApiOkResponse({ type: [PendingWorkspaceInvitationDto] })
+  listWorkspaceInvitations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workspaces.listPendingForWorkspace(user.id, workspaceId);
+  }
+
+  @Post("workspace-invitations/:invitationId/accept")
+  @ApiOperation({ summary: "Accept a pending invitation belonging to the current email" })
+  @ApiCreatedResponse({ type: AcceptedWorkspaceMembershipDto })
+  acceptById(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("invitationId", ParseUUIDPipe) invitationId: string,
+  ) {
+    return this.workspaces.acceptById(user, invitationId);
+  }
+
+  @Post("workspace-invitations/:invitationId/decline")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Decline a pending invitation belonging to the current email" })
+  @ApiNoContentResponse({ description: "Invitation declined" })
+  decline(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("invitationId", ParseUUIDPipe) invitationId: string,
+  ): Promise<void> {
+    return this.workspaces.decline(user, invitationId);
   }
 
   @Patch("workspaces/:workspaceId/members/:userId")

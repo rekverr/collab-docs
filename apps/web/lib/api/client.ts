@@ -23,6 +23,13 @@ import {
   parseWorkspace,
   parseWorkspaceSubscription,
   parseWorkspaces,
+  parseWorkspaceMembers,
+  parseWorkspaceInvitation,
+  parsePendingWorkspaceInvitations,
+  parseCurrentUserWorkspaceInvitations,
+  parseWorkspaceMembershipUpdate,
+  parseAcceptedWorkspaceMembership,
+  parseSharedDocument,
 } from "./parsers";
 import type {
   Attachment,
@@ -46,6 +53,14 @@ import type {
   SearchDocumentsResponse,
   UserNotification,
   WorkspaceSummary,
+  WorkspaceMember,
+  WorkspaceInvitation,
+  PendingWorkspaceInvitation,
+  CurrentUserWorkspaceInvitation,
+  WorkspaceMembershipUpdate,
+  AcceptedWorkspaceMembership,
+  WorkspaceRole,
+  SharedDocument,
   WorkspaceSubscription,
 } from "./types";
 
@@ -99,6 +114,12 @@ export const authApi = {
   refresh(): Promise<AuthResponse> {
     return request("/auth/refresh", parseAuthResponse, { method: "POST" });
   },
+  persistAccessSession(token: string): Promise<CurrentUser> {
+    return request("/auth/session", parseCurrentUser, {
+      method: "POST",
+      headers: authorization(token),
+    });
+  },
   me(token: string): Promise<CurrentUser> {
     return request("/auth/me", parseCurrentUser, { headers: authorization(token) });
   },
@@ -121,6 +142,85 @@ export const workspaceApi = {
       method: "POST",
       headers: authorization(token),
       body: JSON.stringify(input),
+    });
+  },
+  members(token: string, workspaceId: string): Promise<WorkspaceMember[]> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/members`,
+      parseWorkspaceMembers,
+      {
+        headers: authorization(token),
+      },
+    );
+  },
+  invite(
+    token: string,
+    workspaceId: string,
+    input: { email: string; role: WorkspaceRole },
+  ): Promise<WorkspaceInvitation> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+      parseWorkspaceInvitation,
+      {
+        method: "POST",
+        headers: authorization(token),
+        body: JSON.stringify(input),
+      },
+    );
+  },
+  pendingInvitations(token: string): Promise<CurrentUserWorkspaceInvitation[]> {
+    return request("/workspace-invitations/pending", parseCurrentUserWorkspaceInvitations, {
+      headers: authorization(token),
+    });
+  },
+  workspaceInvitations(token: string, workspaceId: string): Promise<PendingWorkspaceInvitation[]> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+      parsePendingWorkspaceInvitations,
+      { headers: authorization(token) },
+    );
+  },
+  acceptInvitationById(token: string, invitationId: string): Promise<AcceptedWorkspaceMembership> {
+    return request(
+      `/workspace-invitations/${encodeURIComponent(invitationId)}/accept`,
+      parseAcceptedWorkspaceMembership,
+      { method: "POST", headers: authorization(token) },
+    );
+  },
+  declineInvitation(token: string, invitationId: string): Promise<void> {
+    return request(`/workspace-invitations/${encodeURIComponent(invitationId)}/decline`, nothing, {
+      method: "POST",
+      headers: authorization(token),
+    });
+  },
+  updateMemberRole(
+    token: string,
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole,
+  ): Promise<WorkspaceMembershipUpdate> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      parseWorkspaceMembershipUpdate,
+      {
+        method: "PATCH",
+        headers: authorization(token),
+        body: JSON.stringify({ role }),
+      },
+    );
+  },
+  removeMember(token: string, workspaceId: string, userId: string): Promise<void> {
+    return request(
+      `/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      nothing,
+      { method: "DELETE", headers: authorization(token) },
+    );
+  },
+  acceptInvitation(token: string, invitationToken: string): Promise<AcceptedWorkspaceMembership> {
+    return request("/workspace-invitations/accept", parseAcceptedWorkspaceMembership, {
+      method: "POST",
+      headers: authorization(token),
+      body: JSON.stringify({ token: invitationToken }),
     });
   },
 };
@@ -352,6 +452,12 @@ export const attachmentApi = {
 };
 
 export const sharingApi = {
+  resolve(token: string): Promise<SharedDocument> {
+    return request("/shares/resolve", parseSharedDocument, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  },
   state(token: string, documentId: string): Promise<DocumentSharingState> {
     return request(
       `/documents/${encodeURIComponent(documentId)}/sharing`,

@@ -195,7 +195,7 @@ export class DocumentSharingService {
       title: link.document.title,
       accessMode: link.accessMode,
       expiresAt: link.expiresAt,
-      contentProjection: link.document.contentProjection,
+      contentProjection: link.document.contentProjection ?? emptyProjection,
     };
   }
 
@@ -222,7 +222,7 @@ export class DocumentSharingService {
       documentId: document.id,
       title: document.title,
       publicSlug: document.publicSlug,
-      contentProjection: document.contentProjection,
+      contentProjection: document.contentProjection ?? emptyProjection,
       projectionUpdatedAt: document.projectionUpdatedAt,
     };
   }
@@ -242,6 +242,49 @@ export class DocumentSharingService {
       select: { objectKey: true, fileName: true, mimeType: true },
     });
     if (attachment === null) throw new NotFoundException("Published attachment not found");
+    return this.storage.createDownloadUrl(
+      attachment.objectKey,
+      attachment.fileName,
+      attachment.mimeType,
+    );
+  }
+
+  async sharedAttachmentUrl(token: string, attachmentId: string): Promise<string> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      throw new NotFoundException("Shared attachment not found");
+    }
+    const link = await this.prisma.documentShareLink.findUnique({
+      where: { tokenHash: hashShareToken(token) },
+      select: {
+        accessMode: true,
+        expiresAt: true,
+        revokedAt: true,
+        document: {
+          select: {
+            id: true,
+            deletedAt: true,
+            archivedAt: true,
+          },
+        },
+      },
+    });
+    if (
+      link === null ||
+      !isActiveShareLink(link) ||
+      link.document.deletedAt !== null ||
+      link.document.archivedAt !== null
+    ) {
+      throw new NotFoundException("Shared attachment not found");
+    }
+    const attachment = await this.prisma.attachment.findFirst({
+      where: {
+        id: attachmentId,
+        documentId: link.document.id,
+        status: AttachmentStatus.READY,
+      },
+      select: { objectKey: true, fileName: true, mimeType: true },
+    });
+    if (attachment === null) throw new NotFoundException("Shared attachment not found");
     return this.storage.createDownloadUrl(
       attachment.objectKey,
       attachment.fileName,
@@ -303,6 +346,8 @@ export class DocumentSharingService {
     return `${this.webUrl}/share/${encodeURIComponent(token)}`;
   }
 }
+
+const emptyProjection = { version: 1, blocks: [], plainText: "" } as const;
 
 const manageableDocumentSelect = {
   id: true,

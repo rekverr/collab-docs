@@ -1,34 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSessionState } from "../auth/session-provider";
 import { workspaceApi } from "../../lib/api/client";
 import { apiErrorMessage } from "../../lib/api/errors";
 import type { WorkspaceSummary } from "../../lib/api/types";
 import { NotificationCenter } from "../notifications/notification-center";
 import { WorkspaceSearch } from "../search/workspace-search";
+import { workspacesChangedEvent } from "../../lib/workspaces/workspace-events";
 
 export function WorkspaceShell({ children }: Readonly<{ children: ReactNode }>) {
   const session = useSessionState();
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const loadWorkspaces = useCallback(async (): Promise<void> => {
+    if (!session.ready) return;
+    setError(null);
+    try {
+      setWorkspaces(await session.withAccessToken(workspaceApi.list));
+    } catch (reason: unknown) {
+      setError(apiErrorMessage(reason));
+    }
+  }, [session]);
+
   useEffect(() => {
     if (!session.ready) return;
-    let active = true;
-    void session
-      .withAccessToken(workspaceApi.list)
-      .then((items) => {
-        if (active) setWorkspaces(items);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(apiErrorMessage(reason));
-      });
+    const reload = () => void loadWorkspaces();
+    window.addEventListener(workspacesChangedEvent, reload);
+    void loadWorkspaces();
     return () => {
-      active = false;
+      window.removeEventListener(workspacesChangedEvent, reload);
     };
-  }, [session]);
+  }, [loadWorkspaces, session.ready]);
 
   return (
     <div className="app-shell">

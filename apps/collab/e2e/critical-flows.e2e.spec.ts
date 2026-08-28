@@ -26,7 +26,14 @@ interface WorkspaceResponse {
 }
 
 interface InvitationResponse {
-  token: string;
+  id: string;
+}
+
+interface PendingInvitationResponse {
+  id: string;
+  workspaceId: string;
+  role: string;
+  workspace: { name: string };
 }
 
 interface DocumentResponse {
@@ -41,6 +48,11 @@ interface PublicationResponse {
 interface WebhookResponse {
   applied: boolean;
   subscription: { plan: string };
+}
+
+interface ShareLinkResponse {
+  id: string;
+  url: string | null;
 }
 
 const databaseUrl = requireIsolatedDatabaseUrl();
@@ -112,11 +124,46 @@ describe("critical assessment flows", { concurrency: false }, () => {
       method: "POST",
       body: { email: viewer.user.email, role: "VIEWER" },
     });
-    await api("/workspace-invitations/accept", {
+
+    const pendingInvitations = await api<PendingInvitationResponse[]>(
+      "/workspace-invitations/pending",
+      { token: viewer.accessToken },
+    );
+    assert.deepEqual(
+      pendingInvitations.map(({ id, workspaceId, role, workspace: pendingWorkspace }) => ({
+        id,
+        workspaceId,
+        role,
+        workspaceName: pendingWorkspace.name,
+      })),
+      [
+        {
+          id: invitation.id,
+          workspaceId: workspace.id,
+          role: "VIEWER",
+          workspaceName: "Assessment Workspace",
+        },
+      ],
+    );
+
+    await api(`/workspace-invitations/${invitation.id}/accept`, {
       token: viewer.accessToken,
       method: "POST",
-      body: { token: invitation.token },
     });
+    assert.deepEqual(
+      await api<PendingInvitationResponse[]>("/workspace-invitations/pending", {
+        token: viewer.accessToken,
+      }),
+      [],
+    );
+    assert.equal(
+      (
+        await api<Array<WorkspaceResponse & { role: string }>>("/workspaces", {
+          token: viewer.accessToken,
+        })
+      ).some(({ id, role }) => id === workspace.id && role === "VIEWER"),
+      true,
+    );
 
     const readable = await api<DocumentResponse>(`/documents/${document.id}`, {
       token: viewer.accessToken,
@@ -235,6 +282,27 @@ describe("critical assessment flows", { concurrency: false }, () => {
     assert.equal(duplicate.applied, false);
     assert.equal(duplicate.subscription.plan, "PRO");
     assert.equal(await prisma.billingEvent.count({ where: { eventId: payload.eventId } }), 1);
+  });
+
+  it("serves and revokes a document-scoped view share link", async () => {
+    const link = await api<ShareLinkResponse>(`/documents/${document.id}/share-links`, {
+      token: owner.accessToken,
+      method: "POST",
+      body: { accessMode: "VIEW" },
+    });
+    assert.notEqual(link.url, null);
+    const sharePath = new URL(link.url!).pathname;
+    const html = await requestHtml(`${webUrl}${sharePath}`);
+    assert.match(html, /Updated after publication/);
+    assert.doesNotMatch(html, /Assessment Workspace/);
+    assert.doesNotMatch(html, /owner\.e2e@example\.com/);
+
+    await api(`/document-share-links/${link.id}`, {
+      token: owner.accessToken,
+      method: "DELETE",
+    });
+    const revoked = await fetch(`${webUrl}${sharePath}`);
+    assert.equal(revoked.status, 404);
   });
 });
 

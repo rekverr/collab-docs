@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api/client";
 import { ApiError, apiErrorMessage } from "../../lib/api/errors";
 import type { CurrentUser } from "../../lib/api/types";
@@ -27,6 +27,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: Readonly<{ children: ReactNode }>) {
   const router = useRouter();
+  const pathname = usePathname();
   const [session, setSession] = useState<{ accessToken: string; user: CurrentUser } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -36,7 +37,10 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
     setError(null);
     void authApi
       .refresh()
-      .then(async (result) => ({ ...result, user: await authApi.me(result.accessToken) }))
+      .then(async (result) => ({
+        ...result,
+        user: await authApi.persistAccessSession(result.accessToken),
+      }))
       .then((result) => {
         if (active) {
           setSession(result);
@@ -46,7 +50,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       .catch((reason: unknown) => {
         if (!active) return;
         if (reason instanceof ApiError && reason.status === 401) {
-          router.replace("/login?reason=expired");
+          router.replace(expiredSessionPath(pathname));
           return;
         }
         setError(apiErrorMessage(reason));
@@ -54,7 +58,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
     return () => {
       active = false;
     };
-  }, [attempt, router]);
+  }, [attempt, pathname, router]);
 
   const logout = useCallback(async () => {
     try {
@@ -66,6 +70,10 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
     }
   }, [router]);
 
+  const retry = useCallback(() => {
+    setAttempt((current) => current + 1);
+  }, []);
+
   const withAccessToken = useCallback(
     async <T,>(operation: (accessToken: string) => Promise<T>): Promise<T> => {
       if (session === null)
@@ -76,16 +84,17 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
         if (!(reason instanceof ApiError) || reason.status !== 401) throw reason;
         try {
           const refreshed = await authApi.refresh();
-          setSession(refreshed);
+          const user = await authApi.persistAccessSession(refreshed.accessToken);
+          setSession({ ...refreshed, user });
           return await operation(refreshed.accessToken);
         } catch (refreshError: unknown) {
           setSession(null);
-          router.replace("/login?reason=expired");
+          router.replace(expiredSessionPath(pathname));
           throw refreshError;
         }
       }
     },
-    [router, session],
+    [pathname, router, session],
   );
 
   const value = useMemo<SessionContextValue>(
@@ -94,13 +103,18 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       error,
       ready: session !== null,
       logout,
-      retry: () => setAttempt((current) => current + 1),
+      retry,
       withAccessToken,
     }),
-    [error, logout, session, withAccessToken],
+    [error, logout, retry, session, withAccessToken],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+function expiredSessionPath(pathname: string): string {
+  const next = pathname.startsWith("/app") || pathname.startsWith("/share/") ? pathname : "/app";
+  return `/login?reason=expired&next=${encodeURIComponent(next)}`;
 }
 
 export function SessionGate({ children }: Readonly<{ children: ReactNode }>) {
@@ -136,6 +150,12 @@ export function useSessionState(): SessionContextValue {
 
 export function useSession(): SessionContextValue & { user: CurrentUser } {
   const session = useSessionState();
-  if (session.user === null) throw new Error("useSession must be rendered inside SessionGate");
-  return { ...session, user: session.user };
+  const authenticatedSession = useMemo(() => {
+    if (session.user === null) return null;
+    return { ...session, user: session.user };
+  }, [session]);
+  if (authenticatedSession === null) {
+    throw new Error("useSession must be rendered inside SessionGate");
+  }
+  return authenticatedSession;
 }

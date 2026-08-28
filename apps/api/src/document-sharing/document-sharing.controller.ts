@@ -132,4 +132,14 @@ export class DocumentSharingController {
   ): Promise<void> {
     response.redirect(302, await this.sharing.publicAttachmentUrl(publicSlug, attachmentId));
   }
+
+  @Get("shares/:token/attachments/:attachmentId")
+  @ApiOperation({ summary: "Redirect an active shared attachment to short-lived object storage" })
+  async sharedAttachment(
+    @Param("token") token: string,
+    @Param("attachmentId", ParseUUIDPipe) attachmentId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.redirect(302, await this.sharing.sharedAttachmentUrl(token, attachmentId));
+  }
 }

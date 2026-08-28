@@ -8,6 +8,10 @@ import {
   parseDocumentVersionPreview,
   parseSearchDocumentsResponse,
   parseWorkspaceMembers,
+  parseWorkspaceInvitation,
+  parseAcceptedWorkspaceMembership,
+  parseCurrentUserWorkspaceInvitations,
+  parsePendingWorkspaceInvitations,
   parseWorkspaces,
 } from "./parsers";
 
@@ -45,6 +49,45 @@ describe("frontend API boundary", () => {
 
     assert.equal(members[0]?.user.displayName, "Person");
     assert.throws(() => parseWorkspaceMembers([{ role: "ROOT" }]), TypeError);
+  });
+
+  it("parses invitation creation and acceptance without untyped boundaries", () => {
+    const invitation = parseWorkspaceInvitation({
+      id: "invitation-1",
+      workspaceId: "workspace-1",
+      email: "viewer@example.com",
+      role: "VIEWER",
+      status: "PENDING",
+      expiresAt: "2026-09-03T10:00:00.000Z",
+      createdAt: "2026-08-27T10:00:00.000Z",
+      token: "a".repeat(43),
+    });
+    const membership = parseAcceptedWorkspaceMembership({
+      id: "membership-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      role: "VIEWER",
+      createdAt: "2026-08-27T10:01:00.000Z",
+    });
+    assert.equal(invitation.email, "viewer@example.com");
+    assert.equal(membership.workspaceId, invitation.workspaceId);
+    assert.throws(() => parseWorkspaceInvitation({ ...invitation, status: "UNKNOWN" }), TypeError);
+
+    const pending = parsePendingWorkspaceInvitations([{ ...invitation, token: undefined }]);
+    const mine = parseCurrentUserWorkspaceInvitations([
+      {
+        id: "invitation-1",
+        workspaceId: "workspace-1",
+        role: "VIEWER",
+        status: "PENDING",
+        expiresAt: invitation.expiresAt,
+        createdAt: invitation.createdAt,
+        workspace: { name: "Design" },
+        invitedBy: { email: "owner@example.com", displayName: null },
+      },
+    ]);
+    assert.equal(pending[0]?.email, invitation.email);
+    assert.equal(mine[0]?.workspace.name, "Design");
   });
 
   it("parses paginated workspace search results", () => {

@@ -77,6 +77,9 @@ export class AppEnvironment {
   WEB_URL!: string;
 
   @IsUrl(httpUrlOptions)
+  INTERNAL_WEB_URL!: string;
+
+  @IsUrl(httpUrlOptions)
   API_URL!: string;
 
   @IsUrl(httpUrlOptions)
@@ -97,6 +100,7 @@ export function validateEnvironment(values: Record<string, unknown>): AppEnviron
       NODE_ENV: RuntimeEnvironment.Development,
       API_PORT: 3001,
       ...values,
+      INTERNAL_WEB_URL: values.INTERNAL_WEB_URL ?? values.WEB_URL,
       S3_PUBLIC_ENDPOINT: values.S3_PUBLIC_ENDPOINT ?? values.S3_ENDPOINT,
     },
     { enableImplicitConversion: true },

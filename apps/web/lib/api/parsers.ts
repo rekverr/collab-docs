@@ -27,6 +27,13 @@ import type {
   SubscriptionStatus,
   UserNotification,
   WorkspaceRole,
+  WorkspaceInvitation,
+  PendingWorkspaceInvitation,
+  CurrentUserWorkspaceInvitation,
+  WorkspaceInvitationStatus,
+  WorkspaceMembershipUpdate,
+  AcceptedWorkspaceMembership,
+  SharedDocument,
   WorkspaceMember,
   WorkspaceSubscription,
   WorkspaceSummary,
@@ -175,6 +182,118 @@ export function parseWorkspaceMembers(value: unknown): WorkspaceMember[] {
   return value.map(parseWorkspaceMember);
 }
 
+const invitationStatuses: ReadonlySet<string> = new Set([
+  "PENDING",
+  "ACCEPTED",
+  "REVOKED",
+  "EXPIRED",
+]);
+
+function isInvitationStatus(value: string): value is WorkspaceInvitationStatus {
+  return invitationStatuses.has(value);
+}
+
+export function parseWorkspaceInvitation(value: unknown): WorkspaceInvitation {
+  const data = record(value, "workspace invitation");
+  const role = string(field(data, "role"), "workspace invitation");
+  const status = string(field(data, "status"), "workspace invitation");
+  if (!isWorkspaceRole(role) || !isInvitationStatus(status)) {
+    throw new TypeError("Invalid workspace invitation response");
+  }
+  return {
+    id: string(field(data, "id"), "workspace invitation"),
+    workspaceId: string(field(data, "workspaceId"), "workspace invitation"),
+    email: string(field(data, "email"), "workspace invitation"),
+    role,
+    status,
+    expiresAt: string(field(data, "expiresAt"), "workspace invitation"),
+    createdAt: string(field(data, "createdAt"), "workspace invitation"),
+    token: string(field(data, "token"), "workspace invitation"),
+  };
+}
+
+export function parsePendingWorkspaceInvitation(value: unknown): PendingWorkspaceInvitation {
+  const data = record(value, "pending workspace invitation");
+  const role = string(field(data, "role"), "pending workspace invitation");
+  if (!isWorkspaceRole(role) || field(data, "status") !== "PENDING")
+    throw new TypeError("Invalid pending workspace invitation response");
+  return {
+    id: string(field(data, "id"), "pending workspace invitation"),
+    workspaceId: string(field(data, "workspaceId"), "pending workspace invitation"),
+    email: string(field(data, "email"), "pending workspace invitation"),
+    role,
+    status: "PENDING",
+    expiresAt: string(field(data, "expiresAt"), "pending workspace invitation"),
+    createdAt: string(field(data, "createdAt"), "pending workspace invitation"),
+  };
+}
+
+export function parsePendingWorkspaceInvitations(value: unknown): PendingWorkspaceInvitation[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid pending workspace invitation list");
+  return value.map(parsePendingWorkspaceInvitation);
+}
+
+export function parseCurrentUserWorkspaceInvitation(
+  value: unknown,
+): CurrentUserWorkspaceInvitation {
+  const data = record(value, "current user workspace invitation");
+  const role = string(field(data, "role"), "current user workspace invitation");
+  if (!isWorkspaceRole(role) || field(data, "status") !== "PENDING")
+    throw new TypeError("Invalid current user workspace invitation response");
+  const workspace = record(field(data, "workspace"), "invitation workspace");
+  const invitedByValue = field(data, "invitedBy");
+  const invitedBy = invitedByValue === null ? null : record(invitedByValue, "invitation inviter");
+  const displayName = invitedBy === null ? null : field(invitedBy, "displayName");
+  if (displayName !== null && typeof displayName !== "string")
+    throw new TypeError("Invalid invitation inviter response");
+  return {
+    id: string(field(data, "id"), "current user workspace invitation"),
+    workspaceId: string(field(data, "workspaceId"), "current user workspace invitation"),
+    role,
+    status: "PENDING",
+    expiresAt: string(field(data, "expiresAt"), "current user workspace invitation"),
+    createdAt: string(field(data, "createdAt"), "current user workspace invitation"),
+    workspace: { name: string(field(workspace, "name"), "invitation workspace") },
+    invitedBy:
+      invitedBy === null
+        ? null
+        : { email: string(field(invitedBy, "email"), "invitation inviter"), displayName },
+  };
+}
+
+export function parseCurrentUserWorkspaceInvitations(
+  value: unknown,
+): CurrentUserWorkspaceInvitation[] {
+  if (!Array.isArray(value)) throw new TypeError("Invalid current user invitation list");
+  return value.map(parseCurrentUserWorkspaceInvitation);
+}
+
+export function parseWorkspaceMembershipUpdate(value: unknown): WorkspaceMembershipUpdate {
+  const data = record(value, "workspace membership");
+  const role = string(field(data, "role"), "workspace membership");
+  if (!isWorkspaceRole(role)) throw new TypeError("Invalid workspace membership response");
+  return {
+    id: string(field(data, "id"), "workspace membership"),
+    workspaceId: string(field(data, "workspaceId"), "workspace membership"),
+    userId: string(field(data, "userId"), "workspace membership"),
+    role,
+    updatedAt: string(field(data, "updatedAt"), "workspace membership"),
+  };
+}
+
+export function parseAcceptedWorkspaceMembership(value: unknown): AcceptedWorkspaceMembership {
+  const data = record(value, "accepted workspace membership");
+  const role = string(field(data, "role"), "accepted workspace membership");
+  if (!isWorkspaceRole(role)) throw new TypeError("Invalid accepted membership response");
+  return {
+    id: string(field(data, "id"), "accepted workspace membership"),
+    workspaceId: string(field(data, "workspaceId"), "accepted workspace membership"),
+    userId: string(field(data, "userId"), "accepted workspace membership"),
+    role,
+    createdAt: string(field(data, "createdAt"), "accepted workspace membership"),
+  };
+}
+
 const publicationStates: ReadonlySet<string> = new Set(["PRIVATE", "PUBLISHED"]);
 
 function isPublicationState(value: string): value is DocumentPublicationState {
@@ -308,7 +427,7 @@ export function parseRestoreDocumentVersionResult(value: unknown): RestoreDocume
   };
 }
 
-function parseDocumentProjection(value: unknown): DocumentProjection {
+export function parseDocumentProjection(value: unknown): DocumentProjection {
   const data = record(value, "document projection");
   const version = field(data, "version");
   const blocks = field(data, "blocks");
@@ -525,5 +644,16 @@ export function parseDocumentSharingState(value: unknown): DocumentSharingState 
     publicSlug: nullableString(field(data, "publicSlug"), "document sharing state"),
     publicUrl: nullableString(field(data, "publicUrl"), "document sharing state"),
     links: links.map(parseDocumentShareLink),
+  };
+}
+
+export function parseSharedDocument(value: unknown): SharedDocument {
+  const data = record(value, "shared document");
+  return {
+    documentId: string(field(data, "documentId"), "shared document"),
+    title: string(field(data, "title"), "shared document"),
+    accessMode: parseDocumentAccessMode(field(data, "accessMode")),
+    expiresAt: nullableString(field(data, "expiresAt"), "shared document"),
+    contentProjection: parseDocumentProjection(field(data, "contentProjection")),
   };
 }

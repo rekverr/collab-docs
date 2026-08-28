@@ -14,7 +14,7 @@ export interface ProjectionPublisher {
 }
 
 export interface ProjectionRevalidationJob {
-  data: { documentId: string; sequence: string };
+  data: { documentId: string; sequence: string; reason: "projection-changed" };
   options: JobsOptions;
 }
 
@@ -24,7 +24,7 @@ export function createProjectionRevalidationJob(
   if (!event.published) return null;
   const sequence = event.sequence.toString();
   return {
-    data: { documentId: event.documentId, sequence },
+    data: { documentId: event.documentId, sequence, reason: "projection-changed" },
     options: projectionJobOptions(event.documentId, sequence),
   };
 }
@@ -36,8 +36,9 @@ export class BullMqProjectionPublisher implements ProjectionPublisher {
 
   constructor(redisUrl: string) {
     this.redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
-    this.search = new Queue("document-search-index", { connection: this.redis });
-    this.revalidation = new Queue("public-document-revalidation", { connection: this.redis });
+    const queueOptions = { connection: this.redis, prefix: "collab-docs" } as const;
+    this.search = new Queue("document-search-index", queueOptions);
+    this.revalidation = new Queue("public-document-revalidation", queueOptions);
   }
 
   async publish(event: ProjectionEvent): Promise<void> {

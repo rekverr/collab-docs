@@ -85,6 +85,37 @@ export class WorkspaceInvitationDto {
   token!: string;
 }
 
+export class PendingWorkspaceInvitationDto {
+  @ApiProperty({ format: "uuid" }) id!: string;
+  @ApiProperty({ format: "uuid" }) workspaceId!: string;
+  @ApiProperty({ format: "email" }) email!: string;
+  @ApiProperty({ enum: WorkspaceRole }) role!: WorkspaceRole;
+  @ApiProperty({ example: "PENDING" }) status!: string;
+  @ApiProperty() expiresAt!: Date;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class InvitationWorkspaceDto {
+  @ApiProperty() name!: string;
+}
+
+export class InvitationInviterDto {
+  @ApiProperty({ format: "email" }) email!: string;
+  @ApiPropertyOptional({ nullable: true }) displayName!: string | null;
+}
+
+export class CurrentUserWorkspaceInvitationDto {
+  @ApiProperty({ format: "uuid" }) id!: string;
+  @ApiProperty({ format: "uuid" }) workspaceId!: string;
+  @ApiProperty({ enum: WorkspaceRole }) role!: WorkspaceRole;
+  @ApiProperty({ example: "PENDING" }) status!: string;
+  @ApiProperty() expiresAt!: Date;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty({ type: InvitationWorkspaceDto }) workspace!: InvitationWorkspaceDto;
+  @ApiPropertyOptional({ type: InvitationInviterDto, nullable: true })
+  invitedBy!: InvitationInviterDto | null;
+}
+
 export class AcceptedWorkspaceMembershipDto {
   @ApiProperty({ format: "uuid" }) id!: string;
   @ApiProperty({ format: "uuid" }) workspaceId!: string;
